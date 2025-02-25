@@ -18,7 +18,7 @@ var PN_LOCAL_ESC = newSet([]rune{'_', '~', '.', '-', '!', '$', '&', '\'', '(', '
 
 var PN_CHARS_BASE = func() RuneSet {
 	ret := newSet()
-	ret.addRange('A', 'Z').addRange('A', 'Z').addRange(0xC0, 0xD6).addRange(0xD8, 0xF6).addRange(0xF8, 0x02FF)
+	ret.addRange('a', 'z').addRange('A', 'Z').addRange(0xC0, 0xD6).addRange(0xD8, 0xF6).addRange(0xF8, 0x02FF)
 	ret.addRange(0x0370, 0x037D)
 	ret.addRange(0x037F, 0x1FFF)
 	ret.addRange(0x200C, 0x200D)
@@ -29,6 +29,12 @@ var PN_CHARS_BASE = func() RuneSet {
 	ret.addRange(0xFDF0, 0xFFFD)
 	ret.addRange(0xFDF0, 0xFFFD)
 	ret.addRange(0x00010000, 0x000EFFFF)
+	return ret
+}()
+
+var forbiddenInIRI = func() RuneSet {
+	ret := newSet('>', '<', '"', '{', '}', '|', '^', '`', '\\', '"')
+	ret.addRange(0x00, 0x20)
 	return ret
 }()
 

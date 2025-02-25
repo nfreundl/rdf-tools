@@ -21,6 +21,7 @@ const (
 	EmptyCollection
 	Boolean
 	Graph
+	Point
 	GraphOpening
 	GraphClosing
 	TripleTermOpening
@@ -68,6 +69,10 @@ func NewTokenizer(source <-chan rune, target chan<- *Token) *Tokenizer {
 	}
 }
 
+func (this *Tokenizer) start() {
+	go this.run()
+}
+
 func (this *Tokenizer) run() {
 	defer close(this.target)
 	val, ok := <-this.source
@@ -89,18 +94,27 @@ func (this *Tokenizer) run() {
 
 		if val == '"' {
 			this.curValue += string(val)
-			val = <-this.source
+			val, ok = <-this.source
+			if !ok {
+				panic("unexpected EOF")
+			}
 			if val == '"' {
 				this.curValue += string(val)
-				val = <-this.source
-
+				val, ok = <-this.source
+				if !ok {
+					return
+				}
 				if val == '"' {
 					this.curValue += string(val)
-					val = <-this.source
+
 					//we are in a long double quote
 
 					nofConsecutiveQuotes := 0
 					for nofConsecutiveQuotes != 3 {
+						val, ok = <-this.source
+						if !ok {
+							panic("unexpected EOF")
+						}
 						if val == '"' {
 							nofConsecutiveQuotes += 1
 						} else {
@@ -108,7 +122,6 @@ func (this *Tokenizer) run() {
 						}
 
 						this.curValue += string(val)
-						val = <-this.source
 					}
 					this.target <- &Token{
 						value:     this.curValue,
@@ -132,10 +145,15 @@ func (this *Tokenizer) run() {
 
 		if val == '\'' {
 			this.curValue += string(val)
-			val = <-this.source
+			val, ok = <-this.source
+			if !ok {
+				panic("unexpected EOF")
+			}
 			if val == '\'' {
 				this.curValue += string(val)
-				val = <-this.source
+				if !ok {
+					return
+				}
 
 				if val == '\'' {
 					// we are in a long single quoted string
@@ -186,12 +204,20 @@ func (this *Tokenizer) run() {
 					tokenType: BlankNodeAnonymous,
 				}
 				this.curValue = ""
+				val, ok = <-this.source
+				if !ok {
+					return
+				}
 
 			} else {
 				this.target <- &Token{
 					tokenType: BlankNodeOpening,
 				}
 				this.curValue = ""
+				val, ok = <-this.source
+				if !ok {
+					panic("unexpected EOF")
+				}
 
 			}
 
@@ -213,7 +239,21 @@ func (this *Tokenizer) run() {
 					this.curValue = ""
 				}
 			} else {
-				// in IRi
+				this.curValue += string(val)
+				val = <-this.source
+				for val != '>' {
+					if forbiddenInIRI.contains(val) {
+						panic("unexpected character i IRI")
+					}
+					this.curValue += string(val)
+					val = this.ifUcharrEsc(val)
+					val = <-this.source
+				}
+				this.curValue += string(val)
+
+				this.target <- &Token{tokenType: IRI, value: this.curValue}
+				this.curValue = ""
+				val = <-this.source
 			}
 		}
 
@@ -343,7 +383,12 @@ func (this *Tokenizer) run() {
 				this.curValue += string(val)
 				val = <-this.source
 			} else {
-				panic("error")
+				if this.curValue == "a" {
+					this.target <- &Token{tokenType: A}
+
+				} else {
+					panic("error")
+				}
 			}
 			if PN_CHARS_U.add(':').addRange('0', '9').add('%').contains(val) {
 				if PN_CHARS_U.add(':').addRange('0', '9').contains(val) {
@@ -367,6 +412,7 @@ func (this *Tokenizer) run() {
 				this.curValue = ""
 
 			} else {
+
 				this.target <- &Token{value: this.curValue, tokenType: PNameNS}
 				this.curValue = ""
 			}
@@ -383,10 +429,12 @@ func (this *Tokenizer) run() {
 				val = <-this.source
 				if this.curValue == "@base" {
 					this.target <- &Token{tokenType: BaseTag}
+					this.curValue = ""
 					break
 				}
 				if this.curValue == "@prefix" {
 					this.target <- &Token{tokenType: PrefixTag}
+					this.curValue = ""
 					break
 				}
 			}
@@ -432,7 +480,31 @@ func (this *Tokenizer) run() {
 				val = <-this.source
 			} else {
 				this.target <- &Token{tokenType: CollectionOpening}
+				val = <-this.source
 			}
+		}
+
+		if val == ',' {
+			this.target <- &Token{tokenType: Coma}
+			val, ok = <-this.source
+			if !ok {
+				panic("unexpected EOF")
+			}
+		}
+		if val == ';' {
+			this.target <- &Token{tokenType: SemiColumn}
+			val, ok = <-this.source
+			if !ok {
+				panic("unexpected EOF")
+			}
+		}
+		if val == '.' {
+			this.target <- &Token{tokenType: Point}
+			val, ok = <-this.source
+			if !ok {
+				return
+			}
+
 		}
 
 	}
