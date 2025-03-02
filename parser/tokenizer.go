@@ -38,6 +38,8 @@ const (
 	Coma
 	Dot
 	BaseTag
+	SparqlBaseTag
+	SparqlPrefixTag
 )
 const BufferSize int = 1 << 30
 
@@ -214,10 +216,6 @@ func (this *Tokenizer) run() {
 					tokenType: BlankNodeOpening,
 				}
 				this.curValue = ""
-				val, ok = <-this.source
-				if !ok {
-					panic("unexpected EOF")
-				}
 
 			}
 
@@ -286,6 +284,16 @@ func (this *Tokenizer) run() {
 			}
 		}
 
+		// closing ]
+
+		if val == ']' {
+			this.target <- &Token{tokenType: BlankNodeClosing}
+			val, ok = <-this.source
+			if !ok {
+				return
+			}
+		}
+
 		// {
 
 		if val == '{' {
@@ -310,7 +318,7 @@ func (this *Tokenizer) run() {
 				if ((val >= '0') && (val <= '9')) || PN_CHARS_U.contains(val) {
 					this.curValue += string(val)
 					val = <-this.source
-					for PN_CHARS.add('.').contains(val) {
+					for PN_CHARS.copy().add('.').contains(val) {
 						this.curValue += string(val)
 						val = <-this.source
 					}
@@ -371,49 +379,28 @@ func (this *Tokenizer) run() {
 		// PN_CHARS_BASE ((PN_CHARS | '.')* PN_CHARS)?
 		if PN_CHARS_BASE.contains(val) {
 			this.curValue += string(val)
-			val = <-this.source
-			for PN_CHARS.add('.').contains(val) {
+			val, ok = <-this.source
+			if !ok {
+				this.checkDottingAndProducePnameNs()
+				return
+			}
+			for ok && PN_CHARS.copy().add('.').contains(val) {
 				this.curValue += string(val)
-				val = <-this.source
+				val, ok = <-this.source
 			}
-			if this.curValue[len(this.curValue)-1] == '.' {
-				panic("cannot end with '.'")
+			if !ok {
+				return
 			}
+			this.checkDottingAndProducePnameNs()
 			if val == ':' {
 				this.curValue += string(val)
 				val = <-this.source
+				val, ok = this.pnLocalProduction(val)
+				if !ok {
+					return
+				}
 			} else {
-				if this.curValue == "a" {
-					this.target <- &Token{tokenType: A}
-
-				} else {
-					panic("error")
-				}
-			}
-			if PN_CHARS_U.add(':').addRange('0', '9').add('%').contains(val) {
-				if PN_CHARS_U.add(':').addRange('0', '9').contains(val) {
-					this.curValue += string(val)
-					val = <-this.source
-				}
-				val = this.ifPlxEsc(val)
-
-				for PN_CHARS.add(':').add('.').addRange('0', '9').add('%').contains(val) {
-					if PN_CHARS.add(':').add('.').addRange('0', '9').contains(val) {
-						this.curValue += string(val)
-						val = <-this.source
-					}
-					val = this.ifPlxEsc(val)
-
-				}
-				if this.curValue[len(this.curValue)-1] == '.' {
-					panic("cannot end with '.'")
-				}
-				this.target <- &Token{value: this.curValue, tokenType: PNameLN}
-				this.curValue = ""
-
-			} else {
-
-				this.target <- &Token{value: this.curValue, tokenType: PNameNS}
+				this.produceSpecialKeyword()
 				this.curValue = ""
 			}
 

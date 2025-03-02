@@ -9,10 +9,10 @@ import (
 func TestTokenizer(t *testing.T) {
 	x := `@prefix pp: <http://example.com/> .
 [ ] a pp:xx , pp:yy , [ a pp:zz ] .
-	//  `
+	`
 
 	expected := []*Token{
-		{tokenType: Prefix},
+		{tokenType: PrefixTag},
 		{value: "pp:", tokenType: PNameNS},
 		{value: "<http://example.com/>", tokenType: IRI},
 		{tokenType: Point},
@@ -34,6 +34,7 @@ func TestTokenizer(t *testing.T) {
 		for _, v := range x {
 			source <- v
 		}
+		close(source)
 	}()
 
 	target := make(chan *Token)

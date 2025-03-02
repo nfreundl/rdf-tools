@@ -40,7 +40,7 @@ var forbiddenInIRI = func() RuneSet {
 
 var PN_CHARS_U = PN_CHARS_BASE.copy().add('_')
 
-var PN_CHARS = PN_CHARS_U.add('-').addRange('0', '9').add(0xB7).addRange(0x0300, 0x036F).addRange(0x203F, 0x2040)
+var PN_CHARS = PN_CHARS_U.copy().add('-').addRange('0', '9').add(0xB7).addRange(0x0300, 0x036F).addRange(0x203F, 0x2040)
 
 const HEX2 = "[0-9]|[A-F]|[a-f]"
 
