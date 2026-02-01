@@ -1,6 +1,6 @@
 /*
 * This work is released under CC BY-NC-SA 4.0
-* Copyright © 2025 Nicolas Edouard Martin Freundler
+* Copyright © 2025 Nicolas Freundler
  */
 package parser
 
@@ -21,7 +21,6 @@ const (
 	EmptyCollection
 	Boolean
 	Graph
-	Point
 	GraphOpening
 	GraphClosing
 	TripleTermOpening
@@ -486,7 +485,7 @@ func (this *Tokenizer) run() {
 			}
 		}
 		if val == '.' {
-			this.target <- &Token{tokenType: Point}
+			this.target <- &Token{tokenType: Dot}
 			val, ok = <-this.source
 			if !ok {
 				return

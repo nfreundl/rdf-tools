@@ -1,3 +1,3 @@
 module github.com/nfreundl/rdf-tools
 
-go 1.18
+go 1.25

@@ -1,10 +1,12 @@
 /*
 * This work is released under CC BY-NC-SA 4.0
-* Copyright © 2025 Nicolas Edouard Martin Freundler
+* Copyright © 2025 Nicolas Freundler
  */
 package parser
 
 import (
+	"strings"
+
 	"github.com/nfreundl/rdf-tools/model"
 )
 
@@ -24,6 +26,9 @@ type Parser struct {
 	curReifier    model.RDFTerm
 	curTripleTerm model.TripleTerm
 	curGraph      model.RDFTerm
+
+	// stack for recursive blank node property list
+	bnodeStack *BnodeStack
 }
 
 func newParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
@@ -31,25 +36,41 @@ func newParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
 		source: source,
 		target: target,
 		// all the rest is nil !
+		bnodeStack: NewStack(),
 	}
 
 }
 
+func (this *Parser) start() {
+	// with bufferless channels, this need to be started otherwise it waits
+	go this.run()
+}
+
 func (this *Parser) run() {
 	defer close(this.target)
-	val := <-this.source
+
 	for {
+		val, ok := <-this.source
+		if !ok {
+			return
+		}
 
 		if val.tokenType == Dot {
-			this.target <- &model.Statement{
-				Subject:   this.curSubject,
-				Object:    this.curObject,
-				Predicate: this.curPredicate,
-				Context:   this.curGraph,
-			}
-			this.curSubject = nil
-			this.curPredicate = nil
-			this.curObject = nil
+			if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject != nil) {
+				this.target <- &model.Statement{
+					Subject:   this.curSubject,
+					Object:    this.curObject,
+					Predicate: this.curPredicate,
+					Context:   this.curGraph,
+				}
+				this.curSubject = nil
+				this.curPredicate = nil
+				this.curObject = nil
+
+			} else if (this.curSubject != nil) && (this.curObject == nil) {
+				panic("unexpected .")
+			} // else do nothing because it was already nil nil nil because of, e. g. a previous blank node
+
 		} else if val.tokenType == SemiColumn {
 			this.target <- &model.Statement{
 				Subject:   this.curSubject,
@@ -69,17 +90,25 @@ func (this *Parser) run() {
 			}
 
 			this.curObject = nil
-		} else if val.tokenType == BlankNodeClosing {
-			this.target <- &model.Statement{
-				Subject:   this.curSubject,
-				Object:    this.curObject,
-				Predicate: this.curPredicate,
-				Context:   this.curGraph,
-			}
-			this.curSubject = nil
-			this.curPredicate = nil
-			this.curObject = nil
 
+		} else if val.tokenType == BlankNodeAnonymous {
+			newBlankNode := &model.AnonymousBlankNode{}
+			if (this.curSubject != nil) && (this.curPredicate != nil) {
+				this.curObject = newBlankNode
+				this.target <- &model.Statement{
+					Subject:   this.curSubject,
+					Object:    this.curObject,
+					Predicate: this.curPredicate,
+					Context:   this.curGraph,
+				}
+				this.curSubject = nil
+				this.curPredicate = nil
+				this.curObject = nil
+			} else if this.curSubject == nil {
+				this.curSubject = newBlankNode
+			} else {
+				panic("unexcpected blank node predicate")
+			}
 		} else if val.tokenType == BlankNodeOpening {
 			newBlankNode := &model.AnonymousBlankNode{}
 			if (this.curSubject != nil) && (this.curPredicate != nil) {
@@ -90,19 +119,36 @@ func (this *Parser) run() {
 					Predicate: this.curPredicate,
 					Context:   this.curGraph,
 				}
+				this.curSubject, this.curPredicate, this.curObject = nil, nil, nil
 
 			} else if (this.curSubject == nil) && (this.curPredicate == nil) {
 				this.curSubject = newBlankNode
 
 			} else {
-				panic("not implemented")
+				panic("blank node as predicate not implemented")
 			}
+			// entering the blank node property list: save the current state by pushing to the stack, then initialize the current subject
+			this.bnodeStack.Add(this.curSubject, this.curPredicate, this.curObject)
+			this.curSubject = newBlankNode
 
-			this.runInsideBlankNode(newBlankNode)
+			// this.runInsideBlankNode(newBlankNode)
 
 		} else if val.tokenType == BlankNodeClosing {
-			panic("unexpected ]")
+			if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject != nil) {
+				this.target <- &model.Statement{
+					Subject:   this.curSubject,
+					Object:    this.curObject,
+					Predicate: this.curPredicate,
+					Context:   this.curGraph,
+				}
+			} else if (this.curSubject != nil) && (this.curObject == nil) {
+				panic("closing blank node property list to early !")
+			} // if all are nil, it means a Dot was pu
+
+			this.curSubject, this.curPredicate, this.curObject = this.bnodeStack.Pop()
+
 		} else if val.tokenType == PNameNS {
+			// TODO investigate whether it should be an error outside prefixes declaration ?
 
 			if this.curSubject == nil {
 				this.curSubject = &model.PrefixedName{Prefix: val.value}
@@ -114,7 +160,25 @@ func (this *Parser) run() {
 			//|| (val.tokenType == IRI) || (val.tokenType == A)
 
 		} else if val.tokenType == PNameLN {
-
+			// TODO, it is a bit undoing what was done
+			splt := strings.SplitN(val.value, ":", 2)
+			prefix := splt[0] + ":"
+			pnLocal := splt[1]
+			if this.curSubject == nil {
+				this.curSubject = &model.PrefixedName{Prefix: prefix, Localname: pnLocal}
+			} else if this.curPredicate == nil {
+				this.curPredicate = &model.PrefixedName{Prefix: prefix, Localname: pnLocal}
+			} else {
+				this.curObject = &model.PrefixedName{Prefix: prefix, Localname: pnLocal}
+			}
+		} else if val.tokenType == A {
+			if this.curSubject == nil {
+				this.curSubject = model.A
+			} else if this.curPredicate == nil {
+				this.curPredicate = model.A
+			} else {
+				this.curObject = model.A
+			}
 		} else if val.tokenType == BaseTag {
 			val = <-this.source
 			if val.tokenType == PNameNS {
@@ -179,7 +243,10 @@ func (this *Parser) run() {
 }
 
 func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
-	val := <-this.source
+	val, ok := <-this.source
+	if !ok {
+		panic("unexpected final opening blank node")
+	}
 
 	var curPredicate model.RDFTerm
 	var curObject model.RDFTerm

@@ -9,13 +9,14 @@ import (
 func TestTokenizer(t *testing.T) {
 	x := `@prefix pp: <http://example.com/> .
 [ ] a pp:xx , pp:yy , [ a pp:zz ] .
+pp:aa a pp:zz ; pp:has [ ] .
 	`
 
 	expected := []*Token{
 		{tokenType: PrefixTag},
 		{value: "pp:", tokenType: PNameNS},
 		{value: "<http://example.com/>", tokenType: IRI},
-		{tokenType: Point},
+		{tokenType: Dot},
 		{tokenType: BlankNodeAnonymous},
 		{tokenType: A},
 		{value: "pp:xx", tokenType: PNameLN},
@@ -26,7 +27,14 @@ func TestTokenizer(t *testing.T) {
 		{tokenType: A},
 		{value: "pp:zz", tokenType: PNameLN},
 		{tokenType: BlankNodeClosing},
-		{tokenType: Point},
+		{tokenType: Dot},
+		{tokenType: PNameLN, value: "pp:aa"},
+		{tokenType: A},
+		{value: "pp:zz", tokenType: PNameLN},
+		{tokenType: SemiColumn},
+		{tokenType: PNameLN, value: "pp:has"},
+		{tokenType: BlankNodeAnonymous},
+		{tokenType: Dot},
 	}
 	source := make(chan rune)
 
