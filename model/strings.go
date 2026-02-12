@@ -6,6 +6,23 @@ package model
 
 type IRI string
 type Prefix string
-type A_ string
+type a_ string
 
-const A A_ = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+const A a_ = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+func (this IRI) Equals(that RDFTerm) bool {
+	thatIri, ok := that.(IRI)
+	if ok {
+		return this == thatIri
+	}
+	return false
+
+}
+
+func (this a_) Equals(that RDFTerm) bool {
+	thatA, ok := that.(a_)
+	if ok {
+		return this == thatA
+	}
+	return false
+}

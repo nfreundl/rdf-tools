@@ -6,7 +6,6 @@ package parser
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/nfreundl/rdf-tools/model"
@@ -45,13 +44,15 @@ func TestParser(t *testing.T) {
 		{tokenType: Dot},
 	}
 
+	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
+
 	expected := []*model.Statement{
-		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: &model.PrefixedName{Prefix: "pp:", Localname: "xx"}},
-		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: &model.PrefixedName{Prefix: "pp:", Localname: "yy"}},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: newPname("pp:", "xx")},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: newPname("pp:", "yy")},
 		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: &model.AnonymousBlankNode{}},
-		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: &model.PrefixedName{Prefix: "pp:", Localname: "zz"}},
-		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: &model.PrefixedName{Prefix: "pp:", Localname: "zz"}},
-		{Subject: &model.PrefixedName{Prefix: "pp:", Localname: "aa"}, Predicate: &model.PrefixedName{Prefix: "pp:", Localname: "has"}, Object: &model.AnonymousBlankNode{}},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: newPname("pp:", "zz")},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: model.A, Object: newPname("pp:", "zz")},
+		{Subject: newPname("pp:", "aa"), Predicate: newPname("pp:", "has"), Object: &model.AnonymousBlankNode{}},
 	}
 
 	source := make(chan *Token)
@@ -85,52 +86,52 @@ func TestParser(t *testing.T) {
 	// check deep equal of all non-blank nodes
 	// no blank nodes in property
 	for i := 0; i < len(expected); i++ {
-		if !reflect.DeepEqual(expected[i].Predicate, statements[i].Predicate) {
+		if !expected[i].Predicate.Equals(statements[i].Predicate) {
 			t.Errorf("the %dth predicates are not the same", i+1)
 
 		}
 	}
-	if !reflect.DeepEqual(expected[0].Object, statements[0].Object) {
-		t.Errorf("the first objects are not equal")
+	if !expected[0].Object.Equals(statements[0].Object) {
+		t.Errorf("the firs.Equals(objects are not equal")
 	}
-	if !reflect.DeepEqual(expected[1].Object, statements[1].Object) {
+	if !expected[1].Object.Equals(statements[1].Object) {
 		t.Errorf("the second objects are not equal")
 	}
-	if !reflect.DeepEqual(expected[3].Object, statements[3].Object) {
+	if !expected[3].Object.Equals(statements[3].Object) {
 		t.Errorf("the fourth objects are not equal")
 	}
-	if !reflect.DeepEqual(expected[4].Object, statements[4].Object) {
+	if !expected[4].Object.Equals(statements[4].Object) {
 		t.Errorf("the fifth objects are not equal")
 	}
-	if !reflect.DeepEqual(expected[5].Subject, statements[5].Subject) {
+	if !expected[5].Subject.Equals(statements[5].Subject) {
 		t.Errorf("the sixth subjects are not equal")
 	}
 
 	// some blank nodes must be equal (pointer equality, maybe later we will use UUID for internal IDs)
 
-	if statements[0].Subject != statements[1].Subject {
+	if !statements[0].Subject.Equals(statements[1].Subject) {
 		t.Errorf("first and second subject blank nodes are not equal")
 	}
 
-	if statements[1].Subject != statements[2].Subject {
+	if !statements[1].Subject.Equals(statements[2].Subject) {
 		t.Errorf("second subject and third subject blank node are not equal")
 	}
 
-	if statements[2].Object != statements[3].Subject {
+	if !statements[2].Object.Equals(statements[3].Subject) {
 		t.Errorf("second object and fourth subject blank node are not equal")
 	}
 
 	// some blank node cannot be equal
 
-	if statements[0].Subject == statements[2].Object {
+	if statements[0].Subject.Equals(statements[2].Object) {
 		t.Errorf("first subject and third object are equal")
 	}
 
-	if statements[0].Subject == statements[5].Object {
+	if statements[0].Subject.Equals(statements[5].Object) {
 		t.Errorf("first subject and third object are equal")
 	}
 
-	if statements[2].Object == statements[5].Object {
+	if statements[2].Object.Equals(statements[5].Object) {
 		t.Errorf("third object and third object are equal")
 	}
 

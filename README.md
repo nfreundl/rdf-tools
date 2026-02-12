@@ -8,3 +8,7 @@ This work is licensed under a
 [cc-by-nc-sa]: http://creativecommons.org/licenses/by-nc-sa/4.0/
 [cc-by-nc-sa-image]: https://licensebuttons.net/l/by-nc-sa/4.0/88x31.png
 [cc-by-nc-sa-shield]: https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg
+ 
+## Acknowledgement
+
+The algorithm from production of graph canonicalisation is an implementation of the work of Prof. Aidan Hogan, [*Canonical Forms for Isomorphic and Equivalent RDF Graphs: Algorithms for Leaning and Labelling Blank Nodes*](https://aidanhogan.com/docs/rdf-canonicalisation.pdf),ACM Transactions on the Web, January 2017.

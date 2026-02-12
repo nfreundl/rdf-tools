@@ -10,3 +10,7 @@ type Statement struct {
 	Object    RDFTerm
 	Context   RDFTerm
 }
+
+func (this *Statement) Equals(that *Statement) bool {
+	return (this.Subject.Equals(that.Subject)) && (this.Predicate.Equals(that.Predicate)) && (this.Object.Equals(that.Object)) && (this.Context.Equals(that.Context))
+}

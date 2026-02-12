@@ -29,15 +29,24 @@ type Parser struct {
 
 	// stack for recursive blank node property list
 	bnodeStack *BnodeStack
+
+	// the PName factory
+	newPrefixedName model.PNameConstructor
 }
 
 func newParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
-	return &Parser{
-		source: source,
-		target: target,
+	ret := &Parser{
+		source:      source,
+		target:      target,
+		namespaces:  make(map[model.Prefix]model.IRI),
+		bnodeLabels: make(map[string]*model.LabelledBlankNode),
 		// all the rest is nil !
 		bnodeStack: NewStack(),
 	}
+
+	ret.newPrefixedName = model.PrefixNameFactory(ret.namespaces)
+
+	return ret
 
 }
 
@@ -92,7 +101,7 @@ func (this *Parser) run() {
 			this.curObject = nil
 
 		} else if val.tokenType == BlankNodeAnonymous {
-			newBlankNode := &model.AnonymousBlankNode{}
+			newBlankNode := model.NewAnonymousBlankNode()
 			if (this.curSubject != nil) && (this.curPredicate != nil) {
 				this.curObject = newBlankNode
 				this.target <- &model.Statement{
@@ -110,7 +119,7 @@ func (this *Parser) run() {
 				panic("unexcpected blank node predicate")
 			}
 		} else if val.tokenType == BlankNodeOpening {
-			newBlankNode := &model.AnonymousBlankNode{}
+			newBlankNode := model.NewAnonymousBlankNode()
 			if (this.curSubject != nil) && (this.curPredicate != nil) {
 				this.curObject = newBlankNode
 				this.target <- &model.Statement{
@@ -151,11 +160,11 @@ func (this *Parser) run() {
 			// TODO investigate whether it should be an error outside prefixes declaration ?
 
 			if this.curSubject == nil {
-				this.curSubject = &model.PrefixedName{Prefix: val.value}
+				this.curSubject = this.newPrefixedName(val.value, "")
 			} else if this.curPredicate == nil {
-				this.curPredicate = &model.PrefixedName{Prefix: val.value}
+				this.curPredicate = this.newPrefixedName(val.value, "")
 			} else {
-				this.curObject = &model.PrefixedName{Prefix: val.value}
+				this.curObject = this.newPrefixedName(val.value, "")
 			}
 			//|| (val.tokenType == IRI) || (val.tokenType == A)
 
@@ -165,11 +174,11 @@ func (this *Parser) run() {
 			prefix := splt[0] + ":"
 			pnLocal := splt[1]
 			if this.curSubject == nil {
-				this.curSubject = &model.PrefixedName{Prefix: prefix, Localname: pnLocal}
+				this.curSubject = this.newPrefixedName(prefix, pnLocal)
 			} else if this.curPredicate == nil {
-				this.curPredicate = &model.PrefixedName{Prefix: prefix, Localname: pnLocal}
+				this.curPredicate = this.newPrefixedName(prefix, pnLocal)
 			} else {
-				this.curObject = &model.PrefixedName{Prefix: prefix, Localname: pnLocal}
+				this.curObject = this.newPrefixedName(prefix, pnLocal)
 			}
 		} else if val.tokenType == A {
 			if this.curSubject == nil {
@@ -200,12 +209,13 @@ func (this *Parser) run() {
 		} else if val.tokenType == PrefixTag {
 			val = <-this.source
 			if val.tokenType == PNameNS {
+				prefix := val.value
 				val = <-this.source
 				if val.tokenType == IRI {
-					base := val.value
+					iri := val.value
 					val = <-this.source
 					if val.tokenType == Dot {
-						this.baseUri = model.IRI(base)
+						this.namespaces[model.Prefix(prefix)] = model.IRI(iri)
 					} else {
 						panic("error")
 					}
@@ -218,10 +228,10 @@ func (this *Parser) run() {
 		} else if val.tokenType == CollectionOpening {
 
 			if (this.curSubject == nil) && (this.curPredicate == nil) {
-				this.curSubject = &model.AnonymousBlankNode{}
+				this.curSubject = model.NewAnonymousBlankNode()
 				this.runInsidePropertyList(this.curSubject.(*model.AnonymousBlankNode))
 			} else if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject == nil) {
-				this.curObject = &model.AnonymousBlankNode{}
+				this.curObject = model.NewAnonymousBlankNode()
 				this.runInsidePropertyList(this.curObject.(*model.AnonymousBlankNode))
 			} else {
 				panic("unexpected (")
@@ -298,7 +308,7 @@ func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
 
 func (this *Parser) runInsidePropertyList(newBlankNode *model.AnonymousBlankNode) {
 
-	curElm := newBlankNode
+	curElm := model.BlankNode(newBlankNode)
 	val := <-this.source
 	for {
 		if val.tokenType == CollectionClosing {
@@ -308,7 +318,7 @@ func (this *Parser) runInsidePropertyList(newBlankNode *model.AnonymousBlankNode
 				Object:    model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"),
 			}
 		} else if (val.tokenType == PNameLN) || (val.tokenType == PNameNS) || (val.tokenType == IRI) || (val.tokenType == A) {
-			newElm := &model.AnonymousBlankNode{}
+			newElm := model.NewAnonymousBlankNode()
 			this.target <- &model.Statement{
 				Subject:   curElm,
 				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#first"),

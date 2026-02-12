@@ -6,4 +6,6 @@ package model
 
 // RDF terms
 
-type RDFTerm interface{}
+type RDFTerm interface {
+	Equals(RDFTerm) bool
+}
