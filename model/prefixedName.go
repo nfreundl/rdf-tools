@@ -35,3 +35,8 @@ func (this *prefixedName) Equals(that RDFTerm) bool {
 	return false
 
 }
+
+func (this *prefixedName) String() string {
+	prefixSubstitution := this.Namespaces[Prefix(this.Prefix)]
+	return "<" + string(prefixSubstitution) + this.Localname + ">"
+}

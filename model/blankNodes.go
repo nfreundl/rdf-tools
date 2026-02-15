@@ -12,6 +12,7 @@ import "github.com/nfreundl/rdf-tools/utility"
 type BlankNode interface {
 	getID() string
 	Equals(RDFTerm) bool
+	String() string
 }
 
 type LabelledBlankNode struct {
@@ -53,4 +54,11 @@ func (this *LabelledBlankNode) Equals(that RDFTerm) bool {
 		return false
 	}
 	return this.getID() == bnode.getID()
+}
+
+func (this *AnonymousBlankNode) String() string {
+	return "_:" + this.id
+}
+func (this *LabelledBlankNode) String() string {
+	return "_:" + this.id
 }

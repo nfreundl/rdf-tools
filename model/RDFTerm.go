@@ -8,4 +8,6 @@ package model
 
 type RDFTerm interface {
 	Equals(RDFTerm) bool
+	// string is not injective: prefixed name are turned into IRI, anonymous blank nodes are turned into labelled blank nodes
+	String() string
 }

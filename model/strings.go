@@ -26,3 +26,11 @@ func (this a_) Equals(that RDFTerm) bool {
 	}
 	return false
 }
+
+func (this IRI) String() string {
+	return "<" + string(this) + ">"
+}
+
+func (this a_) String() string {
+	return "<" + string(this) + ">"
+}
