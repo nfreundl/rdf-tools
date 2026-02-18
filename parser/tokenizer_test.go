@@ -48,7 +48,7 @@ pp:aa a pp:zz ; pp:has [ ] .
 	target := make(chan *Token)
 
 	tokenizer := NewTokenizer(source, target)
-	tokenizer.start()
+	tokenizer.Start()
 	result := []*Token{}
 	for token := range target {
 		fmt.Printf("got token %v %s\n", token.tokenType, token.value)

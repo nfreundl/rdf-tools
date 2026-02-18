@@ -13,6 +13,11 @@ import (
 
 const distinguisher = byte('@')
 
+func hashNil() [2]uint64 {
+	h1, h2 := murmur3.StringSum128("")
+	return [2]uint64{h1, h2}
+}
+
 func hashTerm(term model.RDFTerm) [2]uint64 {
 	h1, h2 := murmur3.StringSum128(term.String())
 	return [2]uint64{h1, h2}
@@ -35,6 +40,19 @@ func hash3Tuple(g1, g2, g3 [2]uint64) [2]uint64 {
 	binary.LittleEndian.PutUint64(buffer[24:], g2[1])
 	binary.LittleEndian.PutUint64(buffer[32:], g3[0])
 	binary.LittleEndian.PutUint64(buffer[38:], g3[1])
+	h1, h2 := murmur3.Sum128(buffer)
+	return [2]uint64{h1, h2}
+}
+
+func hash3TupleWithDistinguisher(g1, g2, g3 [2]uint64) [2]uint64 {
+	buffer := make([]byte, 49)
+	binary.LittleEndian.PutUint64(buffer, g1[0])
+	binary.LittleEndian.PutUint64(buffer[8:], g1[1])
+	binary.LittleEndian.PutUint64(buffer[16:], g2[0])
+	binary.LittleEndian.PutUint64(buffer[24:], g2[1])
+	binary.LittleEndian.PutUint64(buffer[32:], g3[0])
+	binary.LittleEndian.PutUint64(buffer[38:], g3[1])
+	buffer[48] = distinguisher
 	h1, h2 := murmur3.Sum128(buffer)
 	return [2]uint64{h1, h2}
 }

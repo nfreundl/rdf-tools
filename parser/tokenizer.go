@@ -70,7 +70,7 @@ func NewTokenizer(source <-chan rune, target chan<- *Token) *Tokenizer {
 	}
 }
 
-func (this *Tokenizer) start() {
+func (this *Tokenizer) Start() {
 	go this.run()
 }
 

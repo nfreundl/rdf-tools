@@ -67,9 +67,9 @@ func TestParser(t *testing.T) {
 
 	target := make(chan *model.Statement)
 
-	parser := newParser(source, target)
+	parser := NewParser(source, target)
 
-	parser.start()
+	parser.Start()
 
 	statements := []*model.Statement{}
 

@@ -5,6 +5,7 @@
 package parser
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/nfreundl/rdf-tools/model"
@@ -34,7 +35,7 @@ type Parser struct {
 	newPrefixedName model.PNameConstructor
 }
 
-func newParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
+func NewParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
 	ret := &Parser{
 		source:      source,
 		target:      target,
@@ -50,7 +51,7 @@ func newParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
 
 }
 
-func (this *Parser) start() {
+func (this *Parser) Start() {
 	// with bufferless channels, this need to be started otherwise it waits
 	go this.run()
 }
@@ -217,7 +218,7 @@ func (this *Parser) run() {
 					if val.tokenType == Dot {
 						this.namespaces[model.Prefix(prefix)] = model.IRI(iri)
 					} else {
-						panic("error")
+						panic(fmt.Sprintf("error, expected Dot, got %v", val.tokenType))
 					}
 				} else {
 					panic("error")

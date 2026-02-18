@@ -55,6 +55,14 @@ func (this *isocanizer) ingest(st *model.Statement) {
 		this.otherHashes[st.Subject.String()] = [][2]uint64{hashTerm(st.Subject)}
 	}
 
+	bnode, ok = st.Predicate.(model.BlankNode)
+	if ok {
+		panic("blank node cannot be a blank node")
+
+	} else {
+		this.otherHashes[st.Predicate.String()] = [][2]uint64{hashTerm(st.Subject)}
+	}
+
 	bnode, ok = st.Object.(model.BlankNode)
 	if ok {
 		this.blankNodeHashes[bnode.String()] = [][2]uint64{{0, 0}}
@@ -92,7 +100,11 @@ func (this *isocanizer) ingest(st *model.Statement) {
 
 	} else {
 
-		this.otherHashes[st.Context.String()] = [][2]uint64{hashTerm(st.Context)}
+		if st.Context == nil {
+			this.otherHashes[""] = [][2]uint64{hashNil()}
+		} else {
+			this.otherHashes[st.Context.String()] = [][2]uint64{hashTerm(st.Context)}
+		}
 	}
 	return
 }
@@ -113,11 +125,12 @@ func (this *isocanizer) runOneRoundDeterministicHashing(blankNodeHashes, otherHa
 			context := this.getCurrentHash(blankNodeHashes, otherHashes, blankNodeIndex, otherHashesIdx, statement.Context)
 			acc = hashBag(acc, hash3Tuple(subject, predicate, context))
 		}
+		// check if it is necessary to add this distinguisher here
 		for _, statement := range statements.AsContext {
 			predicate := this.getCurrentHash(blankNodeHashes, otherHashes, blankNodeIndex, otherHashesIdx, statement.Predicate)
 			subject := this.getCurrentHash(blankNodeHashes, otherHashes, blankNodeIndex, otherHashesIdx, statement.Subject)
 			object := this.getCurrentHash(blankNodeHashes, otherHashes, blankNodeIndex, otherHashesIdx, statement.Object)
-			acc = hashBag(acc, hash3Tuple(subject, predicate, object))
+			acc = hashBag(acc, hash3TupleWithDistinguisher(subject, predicate, object))
 		}
 		x := blankNodeHashes[bnodeID]
 		x = append(x, acc)
