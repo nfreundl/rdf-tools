@@ -25,7 +25,7 @@ type Parser struct {
 	curPredicate  model.RDFTerm
 	curObject     model.RDFTerm
 	curReifier    model.RDFTerm
-	curTripleTerm model.TripleTerm
+	curTripleTerm *model.TripleTerm
 	curGraph      model.RDFTerm
 
 	// the PName factory
@@ -238,10 +238,100 @@ func (this *Parser) run() {
 			} else if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject == nil) {
 				this.curObject = model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
 			} else {
-				panic("unexpected ()")
+				panic("unexpected empty collection () as predicate")
+			}
+		} else if val.tokenType == TripleTermOpening {
+			if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject == nil) {
+				this.curTripleTerm = &model.TripleTerm{}
+				this.runInsideTripleTerm(this.curTripleTerm)
+				this.curObject = this.curTripleTerm
+				this.curTripleTerm = nil
+			} else {
+				panic("the triple term cannot be a subject or a predicate")
+			}
+		} else if val.tokenType == ReifiedTripleOpening {
+			this.curTripleTerm = &model.TripleTerm{}
+			this.runInsideReifiedTerm(this.curTripleTerm)
+			if this.curSubject == nil {
+				this.curSubject = this.curReifier
 			}
 		}
 
+	}
+}
+
+func (this *Parser) runInsideTripleTerm(term *model.TripleTerm) {
+	val, ok := <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case BlankNodeAnonymous:
+		term.Subject = model.NewAnonymousBlankNode()
+	case BlankNodeLabel:
+		term.Subject = model.NewBlankNodeFromLabel(val.value)
+	case PNameLN:
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		term.Subject = this.newPrefixedName(prefix, pnLocal)
+	case IRI:
+		term.Subject = model.IRI(val.value)
+	default:
+		panic("unvalid token type for triple term subject")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case PNameLN:
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		term.Predicate = this.newPrefixedName(prefix, pnLocal)
+	case IRI:
+		term.Predicate = model.IRI(val.value)
+	case A:
+		term.Predicate = model.A
+	default:
+		panic("unvalid token typ for triple term predicate")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case BlankNodeAnonymous:
+		term.Object = model.NewAnonymousBlankNode()
+	case BlankNodeLabel:
+		term.Object = model.NewBlankNodeFromLabel(val.value)
+	case PNameLN:
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		term.Object = this.newPrefixedName(prefix, pnLocal)
+	case IRI:
+		term.Object = model.IRI(val.value)
+	case TripleTermOpening:
+		term.Object = &model.TripleTerm{}
+		this.runInsideTripleTerm(term.Object.(*model.TripleTerm))
+	case String:
+		panic("unimplemented")
+	default:
+		panic("unvalid token typ for triple term predicate")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	if val.tokenType == TripleTermClosing {
+		return
+	} else {
+		panic("expected )>>")
 	}
 }
 

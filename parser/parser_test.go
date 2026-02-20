@@ -205,7 +205,41 @@ func TestParserWithOneLevelOfCollection(t *testing.T) {
 	}
 
 	// then check equality of non-blank nodes
-	for _, v := range v {
+	for i := range expected {
+		if !statements[i].Predicate.Equals(expected[i].Predicate) {
+			t.Errorf("the predicates %d are not equal", i)
+		}
 
+	}
+
+	// then check the equality of blank nodes that should be equal
+	if !statements[1].Subject.Equals(statements[2].Subject) {
+		t.Error("the subject of statement 1 should be equal to the subject of statement 2")
+	}
+	if !statements[2].Object.Equals(statements[3].Subject) {
+		t.Error("the object of statement 2 should be equal to the subject of statement 3")
+	}
+	if !statements[2].Object.Equals(statements[4].Subject) {
+		t.Error("the object of statement 2 should be equal to the subject of statement 4")
+	}
+	if !statements[4].Object.Equals(statements[5].Subject) {
+		t.Error("the object of statement 4 should be equal to the subject of statement 5")
+	}
+	if !statements[4].Object.Equals(statements[6].Subject) {
+		t.Error("the object of statement 4 should be equal to the subject of statement 6")
+	}
+	if !statements[7].Object.Equals(statements[1].Subject) {
+		t.Error("the object of statement 7 should be equal to the subject of statement 1")
+	}
+
+	// then check the inequality of blank nodes that should not be equal
+	if statements[1].Subject.Equals(statements[2].Object) {
+		t.Error("the subject of statement 1 should not be equal to the object of statement 2")
+	}
+	if statements[2].Object.Equals(statements[4].Object) {
+		t.Error("the object of statement 2 should not be equal to the object of statement 4")
+	}
+	if statements[4].Object.Equals(statements[1].Subject) {
+		t.Error("the object of statement 4 should not be equal to the subject of statement 1")
 	}
 }
