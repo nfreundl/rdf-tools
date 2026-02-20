@@ -28,9 +28,6 @@ type Parser struct {
 	curTripleTerm model.TripleTerm
 	curGraph      model.RDFTerm
 
-	// stack for recursive blank node property list
-	bnodeStack *BnodeStack
-
 	// the PName factory
 	newPrefixedName model.PNameConstructor
 }
@@ -42,7 +39,6 @@ func NewParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
 		namespaces:  make(map[model.Prefix]model.IRI),
 		bnodeLabels: make(map[string]*model.LabelledBlankNode),
 		// all the rest is nil !
-		bnodeStack: NewStack(),
 	}
 
 	ret.newPrefixedName = model.PrefixNameFactory(ret.namespaces)
@@ -121,6 +117,7 @@ func (this *Parser) run() {
 			}
 		} else if val.tokenType == BlankNodeOpening {
 			newBlankNode := model.NewAnonymousBlankNode()
+			// unfortunately, this will be deferred to when a , ; . is met, because reifier can change that
 			if (this.curSubject != nil) && (this.curPredicate != nil) {
 				this.curObject = newBlankNode
 				this.target <- &model.Statement{
@@ -138,24 +135,17 @@ func (this *Parser) run() {
 				panic("blank node as predicate not implemented")
 			}
 			// entering the blank node property list: save the current state by pushing to the stack, then initialize the current subject
-			this.bnodeStack.Add(this.curSubject, this.curPredicate, this.curObject)
-			this.curSubject = newBlankNode
+
+			this.runInsideBlankNode(newBlankNode.(*model.AnonymousBlankNode))
+			continue
+			// this.bnodeStack.Add(this.curSubject, this.curPredicate, this.curObject)
+			//this.curSubject = newBlankNode
 
 			// this.runInsideBlankNode(newBlankNode)
 
 		} else if val.tokenType == BlankNodeClosing {
-			if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject != nil) {
-				this.target <- &model.Statement{
-					Subject:   this.curSubject,
-					Object:    this.curObject,
-					Predicate: this.curPredicate,
-					Context:   this.curGraph,
-				}
-			} else if (this.curSubject != nil) && (this.curObject == nil) {
-				panic("closing blank node property list to early !")
-			} // if all are nil, it means a Dot was pu
 
-			this.curSubject, this.curPredicate, this.curObject = this.bnodeStack.Pop()
+			panic("closing blank node property list to early !")
 
 		} else if val.tokenType == PNameNS {
 			// TODO investigate whether it should be an error outside prefixes declaration ?
@@ -230,12 +220,14 @@ func (this *Parser) run() {
 
 			if (this.curSubject == nil) && (this.curPredicate == nil) {
 				this.curSubject = model.NewAnonymousBlankNode()
-				this.runInsidePropertyList(this.curSubject.(*model.AnonymousBlankNode))
+				this.runInsideCollection(this.curSubject.(*model.AnonymousBlankNode))
+				continue
 			} else if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject == nil) {
 				this.curObject = model.NewAnonymousBlankNode()
-				this.runInsidePropertyList(this.curObject.(*model.AnonymousBlankNode))
+				this.runInsideCollection(this.curObject.(*model.AnonymousBlankNode))
+				continue
 			} else {
-				panic("unexpected (")
+				panic("unexpected collection for the predicate")
 			}
 		} else if val.tokenType == CollectionClosing {
 			panic("unexpected )")
@@ -254,21 +246,35 @@ func (this *Parser) run() {
 }
 
 func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
-	val, ok := <-this.source
-	if !ok {
-		panic("unexpected final opening blank node")
-	}
 
 	var curPredicate model.RDFTerm
 	var curObject model.RDFTerm
 	for {
-		if (val.tokenType == PNameLN) || (val.tokenType == PNameNS) || (val.tokenType == IRI) || (val.tokenType == A) {
+		val, ok := <-this.source
+		if !ok {
+			panic("unexpected EOF in the blank node list")
+		}
+
+		if (val.tokenType == PNameLN) || (val.tokenType == IRI) || (val.tokenType == A) {
+			var node model.RDFTerm
+			switch val.tokenType {
+			case IRI:
+				node = model.IRI(val.value)
+			case A:
+				node = model.A
+			case PNameLN:
+				splt := strings.SplitN(val.value, ":", 2)
+				prefix := splt[0] + ":"
+				pnLocal := splt[1]
+				node = this.newPrefixedName(prefix, pnLocal)
+			}
+
 			if curPredicate == nil {
-				curPredicate = model.A
+				curPredicate = node
 
 			} else if curObject == nil {
 
-				curObject = model.A
+				curObject = node
 
 			} else {
 				panic("expecting , ; or ]")
@@ -299,38 +305,157 @@ func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
 			curPredicate = nil
 			curObject = nil
 		} else if val.tokenType == BlankNodeClosing {
-			return
+			if (curPredicate != nil) && (curObject != nil) {
+				this.target <- &model.Statement{
+					Subject:   newBlankNode,
+					Object:    curObject,
+					Predicate: curPredicate,
+					Context:   this.curGraph,
+				}
+				return
+			} else {
+				panic("unexpected ]")
+			}
+
+		} else if val.tokenType == BlankNodeAnonymous {
+			newBlankNode2 := model.NewAnonymousBlankNode()
+			if curPredicate != nil {
+				curObject = newBlankNode2
+				this.target <- &model.Statement{
+					Subject:   newBlankNode,
+					Object:    curObject,
+					Predicate: curPredicate,
+					Context:   this.curGraph,
+				}
+				curPredicate, curObject = nil, nil
+			} else {
+				panic("unexcpected blank node predicate")
+			}
+		} else if val.tokenType == BlankNodeOpening {
+			newBlankNode2 := model.NewAnonymousBlankNode()
+			if curPredicate != nil {
+				curObject = newBlankNode2
+			} else {
+				panic("blank node as predicate not implemented")
+			}
+			// entering the blank node property list: save the current state by pushing to the stack, then initialize the current subject
+
+			this.runInsideBlankNode(newBlankNode2.(*model.AnonymousBlankNode))
+			continue
+		} else if val.tokenType == CollectionOpening {
+
+			newBlankNodeCollection := model.NewAnonymousBlankNode()
+			if curPredicate == nil {
+				panic("anonymous blanknode (from collection) cannot be a predicate")
+			} else if curObject == nil {
+				curObject = newBlankNodeCollection
+				this.runInsideCollection(curObject.(*model.AnonymousBlankNode))
+				continue
+			}
 		} else {
 			panic("not implemented")
 		}
-		val = <-this.source
 	}
 }
 
-func (this *Parser) runInsidePropertyList(newBlankNode *model.AnonymousBlankNode) {
+func (this *Parser) runInsideCollection(newBlankNode *model.AnonymousBlankNode) {
 
 	curElm := model.BlankNode(newBlankNode)
-	val := <-this.source
+
+	firstElm := true
+
 	for {
+		val, ok := <-this.source
+		if !ok {
+			panic("unexpected EOF in the collection")
+		}
 		if val.tokenType == CollectionClosing {
 			this.target <- &model.Statement{
 				Subject:   curElm,
 				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"),
 				Object:    model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"),
 			}
-		} else if (val.tokenType == PNameLN) || (val.tokenType == PNameNS) || (val.tokenType == IRI) || (val.tokenType == A) {
+			return
+		} else if (val.tokenType == PNameLN) || (val.tokenType == IRI) || (val.tokenType == A) || (val.tokenType == BlankNodeAnonymous) {
+			var node model.RDFTerm
+			switch val.tokenType {
+			case A:
+				node = model.A
+			case IRI:
+				node = model.IRI(val.value)
+			case BlankNodeAnonymous:
+				node = model.NewAnonymousBlankNode()
+			case PNameLN:
+				splt := strings.SplitN(val.value, ":", 2)
+				prefix := splt[0] + ":"
+				pnLocal := splt[1]
+				node = this.newPrefixedName(prefix, pnLocal)
+			}
 			newElm := model.NewAnonymousBlankNode()
+			if !firstElm {
+				this.target <- &model.Statement{
+					Subject:   curElm,
+					Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"),
+					Object:    newElm,
+					Context:   this.curGraph,
+				}
+				curElm = newElm
+			}
 			this.target <- &model.Statement{
 				Subject:   curElm,
 				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#first"),
-				Object:    model.A, //val
+				Object:    node,
+				Context:   this.curGraph,
+			}
+			firstElm = false
+
+		} else if val.tokenType == BlankNodeOpening {
+
+			newBlankNode := model.NewAnonymousBlankNode()
+			newElm := model.NewAnonymousBlankNode()
+			if !firstElm {
+				this.target <- &model.Statement{
+					Subject:   curElm,
+					Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"),
+					Object:    newElm,
+					Context:   this.curGraph,
+				}
+				curElm = newElm
 			}
 			this.target <- &model.Statement{
 				Subject:   curElm,
-				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"),
-				Object:    newElm,
+				Object:    newBlankNode,
+				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#first"),
+				Context:   this.curGraph,
 			}
-			curElm = newElm
+
+			firstElm = false
+			this.runInsideBlankNode(newBlankNode.(*model.AnonymousBlankNode))
+			continue
+
+		} else if val.tokenType == CollectionOpening {
+
+			newBlankNode := model.NewAnonymousBlankNode()
+			newElm := model.NewAnonymousBlankNode()
+			if !firstElm {
+				this.target <- &model.Statement{
+					Subject:   curElm,
+					Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"),
+					Object:    newElm,
+					Context:   this.curGraph,
+				}
+				curElm = newElm
+			}
+			this.target <- &model.Statement{
+				Subject:   curElm,
+				Object:    newBlankNode,
+				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#first"),
+				Context:   this.curGraph,
+			}
+
+			firstElm = false
+			this.runInsideCollection(newBlankNode.(*model.AnonymousBlankNode))
+			continue
 
 		} else {
 			panic("not implemented")

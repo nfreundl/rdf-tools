@@ -11,7 +11,7 @@ import (
 	"github.com/nfreundl/rdf-tools/model"
 )
 
-func TestParser(t *testing.T) {
+func TestParserWithOneLevelOfBlankNodes(t *testing.T) {
 
 	/*
 		`@prefix pp: <http://example.com/> .
@@ -135,4 +135,77 @@ func TestParser(t *testing.T) {
 		t.Errorf("third object and third object are equal")
 	}
 
+}
+
+func TestParserWithOneLevelOfCollection(t *testing.T) {
+	/*
+		`@prefix pp: <http://example.com/> .
+		pp:a a pp:xx ; pp:has ( pp:b pp:c pp:d ) .
+		`
+	*/
+
+	x := []*Token{
+		{tokenType: PrefixTag},
+		{value: "pp:", tokenType: PNameNS},
+		{value: "<http://example.com/>", tokenType: IRI},
+		{tokenType: Dot},
+		{value: "pp:a", tokenType: PNameLN},
+		{tokenType: A},
+		{value: "pp:xx", tokenType: PNameLN},
+		{tokenType: SemiColumn},
+		{value: "pp:has", tokenType: PNameLN},
+		{tokenType: CollectionOpening},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{value: "pp:d", tokenType: PNameLN},
+		{tokenType: CollectionClosing},
+		{tokenType: Dot},
+	}
+
+	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
+	first := model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+	rest := model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest")
+	nihil := model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
+	expected := []*model.Statement{
+		{Subject: newPname("pp:", "a"), Predicate: model.A, Object: newPname("pp:", "xx")},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: first, Object: newPname("pp:", "b")},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: rest, Object: &model.AnonymousBlankNode{}},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: first, Object: newPname("pp:", "c")},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: rest, Object: &model.AnonymousBlankNode{}},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: first, Object: newPname("pp:", "d")},
+		{Subject: &model.AnonymousBlankNode{}, Predicate: rest, Object: nihil},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "has"), Object: &model.AnonymousBlankNode{}},
+	}
+
+	source := make(chan *Token)
+
+	go func() {
+		for _, tk := range x {
+			source <- tk
+
+		}
+		close(source)
+	}()
+
+	target := make(chan *model.Statement)
+
+	parser := NewParser(source, target)
+
+	parser.Start()
+	statements := []*model.Statement{}
+
+	for statement := range target {
+		fmt.Printf("got statement !\n")
+		statements = append(statements, statement)
+	}
+
+	// first check the lengths
+	if len(statements) != len(expected) {
+		t.Errorf("The number of statements is not correct; should be %d, got %d", len(expected), len(statements))
+	}
+
+	// then check equality of non-blank nodes
+	for _, v := range v {
+
+	}
 }
