@@ -243,3 +243,255 @@ func TestParserWithOneLevelOfCollection(t *testing.T) {
 		t.Error("the object of statement 4 should not be equal to the subject of statement 1")
 	}
 }
+
+func TestTripleTerm(t *testing.T) {
+	/*
+		`@prefix pp: <http://example.com/> .
+		pp:a pp:b <<( pp:c pp:d <<( pp:e pp:f pp:g )>> )>> .
+		`
+	*/
+
+	x := []*Token{
+		{tokenType: PrefixTag},
+		{value: "pp:", tokenType: PNameNS},
+		{value: "<http://example.com/>", tokenType: IRI},
+		{tokenType: Dot},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{tokenType: TripleTermOpening},
+		{value: "pp:c", tokenType: PNameLN},
+		{value: "pp:d", tokenType: PNameLN},
+		{tokenType: TripleTermOpening},
+		{value: "pp:e", tokenType: PNameLN},
+		{value: "pp:f", tokenType: PNameLN},
+		{value: "pp:g", tokenType: PNameLN},
+		{tokenType: TripleTermClosing},
+		{tokenType: TripleTermClosing},
+		{tokenType: Dot},
+	}
+
+	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
+	expected := []*model.Statement{
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "c"),
+			Predicate: newPname("pp:", "d"),
+			Object: &model.TripleTerm{
+				Subject:   newPname("pp:", "e"),
+				Predicate: newPname("pp:", "f"),
+				Object:    newPname("pp:", "g"),
+			},
+		}},
+	}
+
+	source := make(chan *Token)
+
+	go func() {
+		for _, tk := range x {
+			source <- tk
+
+		}
+		close(source)
+	}()
+
+	target := make(chan *model.Statement)
+
+	parser := NewParser(source, target)
+
+	parser.Start()
+	statements := []*model.Statement{}
+
+	for statement := range target {
+		fmt.Printf("got statement !\n")
+		statements = append(statements, statement)
+	}
+
+	// first check the lengths
+	if len(statements) != len(expected) {
+		t.Errorf("The number of statements is not correct; should be %d, got %d", len(expected), len(statements))
+	}
+
+	// there is no blank node
+
+	if !statements[0].Equals(expected[0]) {
+		t.Errorf("the expected statement and the obtained statement are different")
+	}
+
+}
+
+func TestReifiedTriples(t *testing.T) {
+	/*
+		`@prefix pp: <http://example.com/> .
+		pp:a pp:b << << pp:c pp:d pp:e >> pp:f pp:g ~ pp:h>> .
+		`
+	*/
+
+	x := []*Token{
+		{tokenType: PrefixTag},
+		{value: "pp:", tokenType: PNameNS},
+		{value: "<http://example.com/>", tokenType: IRI},
+		{tokenType: Dot},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{tokenType: ReifiedTripleOpening},
+		{tokenType: ReifiedTripleOpening},
+		{value: "pp:c", tokenType: PNameLN},
+		{value: "pp:d", tokenType: PNameLN},
+		{value: "pp:e", tokenType: PNameLN},
+		{tokenType: ReifiedTripleClosing},
+		{value: "pp:f", tokenType: PNameLN},
+		{value: "pp:g", tokenType: PNameLN},
+		{tokenType: ReifierTag},
+		{value: "pp:h", tokenType: PNameLN},
+		{tokenType: ReifiedTripleClosing},
+		{tokenType: Dot},
+	}
+
+	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
+	expected := []*model.Statement{
+		{Subject: model.NewAnonymousBlankNode(), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "c"),
+			Predicate: newPname("pp:", "d"),
+			Object:    newPname("pp:", "e"),
+		}},
+		{Subject: newPname("pp:", "h"), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   model.NewAnonymousBlankNode(),
+			Predicate: newPname("pp:", "f"),
+			Object:    newPname("pp:", "g"),
+		}},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "h")},
+	}
+
+	source := make(chan *Token)
+
+	go func() {
+		for _, tk := range x {
+			source <- tk
+
+		}
+		close(source)
+	}()
+
+	target := make(chan *model.Statement)
+
+	parser := NewParser(source, target)
+
+	parser.Start()
+	statements := []*model.Statement{}
+
+	for statement := range target {
+		fmt.Printf("got statement !\n")
+		statements = append(statements, statement)
+	}
+
+	// first check the lengths
+	if len(statements) != len(expected) {
+		t.Errorf("The number of statements is not correct; should be %d, got %d", len(expected), len(statements))
+	}
+
+	// check the non-blank nodes
+	if !statements[0].Predicate.Equals(expected[0].Predicate) {
+		t.Errorf("should be equal")
+	}
+	if !statements[0].Object.Equals(expected[0].Object) {
+		t.Errorf("should be equal")
+	}
+	if !statements[1].Subject.Equals(expected[1].Subject) {
+		t.Errorf("should be equal")
+	}
+	if !statements[1].Predicate.Equals(expected[1].Predicate) {
+		t.Errorf("should be equal")
+	}
+	if !statements[1].Object.(*model.TripleTerm).Predicate.Equals(expected[1].Object.(*model.TripleTerm).Predicate) {
+		t.Errorf("should be equal")
+	}
+	if !statements[1].Object.(*model.TripleTerm).Object.Equals(expected[1].Object.(*model.TripleTerm).Object) {
+		t.Errorf("should be equal")
+	}
+
+}
+
+func TestGraphTriples(t *testing.T) {
+	/*
+		`@prefix pp: <http://example.com/> .
+		pp:a pp:b pp:c .
+		{ pp:a pp:b pp:c }
+		{ pp:a pp:b pp:c . }
+		GRAPH _:aa { pp:a pp:b pp:c }
+		_:aa { pp:a pp:b pp:c . }
+		`
+	*/
+
+	x := []*Token{
+		{tokenType: PrefixTag},
+		{value: "pp:", tokenType: PNameNS},
+		{value: "<http://example.com/>", tokenType: IRI},
+		{tokenType: Dot},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: Dot},
+		{tokenType: GraphOpening},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: GraphClosing},
+		{tokenType: GraphOpening},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: Dot},
+		{tokenType: GraphClosing},
+		{tokenType: Graph},
+		{value: "_:aa", tokenType: BlankNodeLabel},
+		{tokenType: GraphOpening},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: GraphClosing},
+		{tokenType: Graph},
+		{value: "_:aa", tokenType: BlankNodeLabel},
+		{tokenType: GraphOpening},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: Dot},
+		{tokenType: GraphClosing},
+	}
+
+	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
+
+	expected := []*model.Statement{
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("_:aa")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("_:aa")},
+	}
+
+	source := make(chan *Token)
+
+	go func() {
+		for _, tk := range x {
+			source <- tk
+
+		}
+		close(source)
+	}()
+
+	target := make(chan *model.Statement)
+
+	parser := NewParser(source, target)
+
+	parser.Start()
+	statements := []*model.Statement{}
+
+	for statement := range target {
+		fmt.Printf("got statement !\n")
+		statements = append(statements, statement)
+	}
+
+	// first check the lengths
+	if len(statements) != len(expected) {
+		t.Errorf("The number of statements is not correct; should be %d, got %d", len(expected), len(statements))
+	}
+}

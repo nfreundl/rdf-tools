@@ -27,6 +27,7 @@ const (
 	TripleTermClosing
 	ReifiedTripleOpening
 	ReifiedTripleClosing
+	ReifierTag
 	AnnotationOpening
 	AnnotationClosing
 	Number
@@ -334,6 +335,15 @@ func (this *Tokenizer) run() {
 
 			}
 
+		}
+
+		// reifier tag ~
+		if val == '~' {
+			this.target <- &Token{tokenType: ReifierTag}
+			val, ok = <-this.source
+			if !ok {
+				return
+			}
 		}
 
 		// numbers

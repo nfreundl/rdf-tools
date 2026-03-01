@@ -30,6 +30,9 @@ type Parser struct {
 
 	// the PName factory
 	newPrefixedName model.PNameConstructor
+
+	// graph state, because default graph is nil
+	inGraph bool
 }
 
 func NewParser(source <-chan *Token, target chan<- *model.Statement) *Parser {
@@ -58,6 +61,9 @@ func (this *Parser) run() {
 	for {
 		val, ok := <-this.source
 		if !ok {
+			if this.inGraph {
+				panic("current graph is not closed before EOF")
+			}
 			return
 		}
 
@@ -76,6 +82,36 @@ func (this *Parser) run() {
 			} else if (this.curSubject != nil) && (this.curObject == nil) {
 				panic("unexpected .")
 			} // else do nothing because it was already nil nil nil because of, e. g. a previous blank node
+
+		} else if val.tokenType == Graph {
+			val, ok := <-this.source
+			if !ok {
+				panic("unexpected EOF")
+			}
+
+			switch val.tokenType {
+			case BlankNodeAnonymous:
+				this.curGraph = model.NewAnonymousBlankNode()
+			case BlankNodeLabel:
+				this.curGraph = model.NewBlankNodeFromLabel(val.value)
+			case IRI:
+				this.curGraph = model.IRI(val.value)
+			case PNameLN:
+				splt := strings.SplitN(val.value, ":", 2)
+				prefix := splt[0] + ":"
+				pnLocal := splt[1]
+				this.curGraph = this.newPrefixedName(prefix, pnLocal)
+			default:
+				panic("unexpected type for graph")
+			}
+
+			val, ok = <-this.source
+			if !ok {
+				panic("unexpected EOF")
+			}
+			if val.tokenType != GraphOpening {
+				panic("expected {")
+			}
 
 		} else if val.tokenType == SemiColumn {
 			this.target <- &model.Statement{
@@ -98,8 +134,12 @@ func (this *Parser) run() {
 			this.curObject = nil
 
 		} else if val.tokenType == BlankNodeAnonymous {
+
+			// labelOrSubject
 			newBlankNode := model.NewAnonymousBlankNode()
-			if (this.curSubject != nil) && (this.curPredicate != nil) {
+			if (this.curSubject == nil) && (!this.inGraph) {
+				this.labelOrSubject(newBlankNode)
+			} else if (this.curSubject != nil) && (this.curPredicate != nil) {
 				this.curObject = newBlankNode
 				this.target <- &model.Statement{
 					Subject:   this.curSubject,
@@ -160,16 +200,30 @@ func (this *Parser) run() {
 			//|| (val.tokenType == IRI) || (val.tokenType == A)
 
 		} else if val.tokenType == PNameLN {
+			// labelOrSubject
 			// TODO, it is a bit undoing what was done
 			splt := strings.SplitN(val.value, ":", 2)
 			prefix := splt[0] + ":"
 			pnLocal := splt[1]
-			if this.curSubject == nil {
+			if (this.curSubject == nil) && (!this.inGraph) {
+				this.labelOrSubject(this.newPrefixedName(prefix, pnLocal))
+			} else if this.curSubject == nil {
 				this.curSubject = this.newPrefixedName(prefix, pnLocal)
 			} else if this.curPredicate == nil {
 				this.curPredicate = this.newPrefixedName(prefix, pnLocal)
 			} else {
 				this.curObject = this.newPrefixedName(prefix, pnLocal)
+			}
+		} else if val.tokenType == IRI {
+			// labelOrSubject
+			if (this.curSubject == nil) && (!this.inGraph) {
+				this.labelOrSubject(model.IRI(val.value))
+			} else if this.curSubject == nil {
+				this.curSubject = model.IRI(val.value)
+			} else if this.curPredicate == nil {
+				this.curPredicate = model.IRI(val.value)
+			} else {
+				this.curObject = model.IRI(val.value)
 			}
 		} else if val.tokenType == A {
 			if this.curSubject == nil {
@@ -251,13 +305,199 @@ func (this *Parser) run() {
 			}
 		} else if val.tokenType == ReifiedTripleOpening {
 			this.curTripleTerm = &model.TripleTerm{}
-			this.runInsideReifiedTerm(this.curTripleTerm)
+			var reifier model.RDFTerm
+			this.runInsideReifiedTerm(this.curTripleTerm, &reifier)
+
 			if this.curSubject == nil {
-				this.curSubject = this.curReifier
+				this.curSubject = reifier
+			} else if (this.curSubject != nil) && (this.curObject == nil) {
+				this.curObject = reifier
+			} else {
+				panic("reified triple cannot be a predicate")
 			}
+		} else if val.tokenType == GraphClosing {
+			if !this.inGraph {
+				panic("unexpected }")
+			}
+			if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject != nil) {
+				this.target <- &model.Statement{
+					Subject:   this.curSubject,
+					Object:    this.curObject,
+					Predicate: this.curPredicate,
+					Context:   this.curGraph,
+				}
+				this.curSubject = nil
+				this.curPredicate = nil
+				this.curObject = nil
+			} else if (this.curSubject != nil) || (this.curPredicate != nil) || (this.curObject != nil) {
+				panic("unexpected }")
+			}
+			this.curGraph = nil
+			this.inGraph = false
 		}
 
 	}
+}
+
+func (this *Parser) labelOrSubject(labelOrSubject model.RDFTerm) {
+	val, ok := <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case GraphOpening:
+		this.curGraph = labelOrSubject
+		this.inGraph = true
+	case IRI:
+		this.curSubject = labelOrSubject
+		this.curPredicate = model.IRI(val.value)
+	case A:
+		this.curSubject = labelOrSubject
+		this.curPredicate = model.A
+	case PNameLN:
+		this.curSubject = labelOrSubject
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		this.curPredicate = this.newPrefixedName(prefix, pnLocal)
+	default:
+		panic("wrong type of predicate")
+
+	}
+}
+
+func (this *Parser) runInsideReifiedTerm(term *model.TripleTerm, param2 *model.RDFTerm) {
+	val, ok := <-this.source
+	if !ok {
+		panic("unexpected eof")
+	}
+	switch val.tokenType {
+	case BlankNodeAnonymous:
+		term.Subject = model.NewAnonymousBlankNode()
+	case BlankNodeLabel:
+		term.Subject = model.NewBlankNodeFromLabel(val.value)
+	case PNameLN:
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		term.Subject = this.newPrefixedName(prefix, pnLocal)
+	case IRI:
+		term.Subject = model.IRI(val.value)
+	case ReifiedTripleOpening:
+		var newReifier model.RDFTerm
+		oldTripleTerm := this.curTripleTerm
+		this.curTripleTerm = &model.TripleTerm{}
+		this.runInsideReifiedTerm(this.curTripleTerm, &newReifier)
+		term.Subject = newReifier
+		this.curTripleTerm = oldTripleTerm
+
+	default:
+		panic("unvalid token type for triple term subject")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case PNameLN:
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		term.Predicate = this.newPrefixedName(prefix, pnLocal)
+	case IRI:
+		term.Predicate = model.IRI(val.value)
+	case A:
+		term.Predicate = model.A
+	default:
+		panic("unvalid token typ for triple term predicate")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case BlankNodeAnonymous:
+		term.Object = model.NewAnonymousBlankNode()
+	case BlankNodeLabel:
+		term.Object = model.NewBlankNodeFromLabel(val.value)
+	case PNameLN:
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		term.Object = this.newPrefixedName(prefix, pnLocal)
+	case IRI:
+		term.Object = model.IRI(val.value)
+	case ReifiedTripleOpening:
+		var newReifier model.RDFTerm
+		oldTripleTerm := this.curTripleTerm
+		this.curTripleTerm = &model.TripleTerm{}
+		this.runInsideReifiedTerm(this.curTripleTerm, &newReifier)
+		term.Object = newReifier
+		this.curTripleTerm = oldTripleTerm
+	case String:
+		panic("unimplemented")
+	default:
+		panic("unvalid token type for triple term predicate")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case ReifiedTripleClosing:
+		newBlankNode := model.NewAnonymousBlankNode()
+		*param2 = newBlankNode
+		this.target <- &model.Statement{
+			Subject:   *param2,
+			Object:    this.curTripleTerm,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Context:   this.curGraph,
+		}
+		return
+	case ReifierTag:
+		// will see what happens
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case BlankNodeAnonymous:
+		*param2 = model.NewAnonymousBlankNode()
+	case BlankNodeLabel:
+		*param2 = model.NewBlankNodeFromLabel(val.value)
+	case IRI:
+		*param2 = model.IRI(val.value)
+	case PNameLN:
+		splt := strings.SplitN(val.value, ":", 2)
+		prefix := splt[0] + ":"
+		pnLocal := splt[1]
+		*param2 = this.newPrefixedName(prefix, pnLocal)
+	default:
+		panic("unvalid token type for reifier")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		panic("unexpected EOF")
+	}
+	switch val.tokenType {
+	case ReifiedTripleClosing:
+		this.target <- &model.Statement{
+			Subject:   *param2,
+			Object:    this.curTripleTerm,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Context:   this.curGraph,
+		}
+		return
+	default:
+		panic("expected >>")
+	}
+
 }
 
 func (this *Parser) runInsideTripleTerm(term *model.TripleTerm) {
@@ -464,6 +704,7 @@ func (this *Parser) runInsideCollection(newBlankNode *model.AnonymousBlankNode) 
 				Subject:   curElm,
 				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"),
 				Object:    model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"),
+				Context:   this.curGraph,
 			}
 			return
 		} else if (val.tokenType == PNameLN) || (val.tokenType == IRI) || (val.tokenType == A) || (val.tokenType == BlankNodeAnonymous) {
