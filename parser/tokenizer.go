@@ -310,10 +310,10 @@ func (this *Tokenizer) run() {
 		// _
 
 		if val == '_' {
-			this.curValue += string(val)
+			// this.curValue += string(val)
 			val = <-this.source
 			if val == ':' {
-				this.curValue += string(val)
+				// this.curValue += string(val)
 				val = <-this.source
 				if ((val >= '0') && (val <= '9')) || PN_CHARS_U.contains(val) {
 					this.curValue += string(val)

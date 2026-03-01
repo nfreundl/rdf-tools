@@ -104,6 +104,7 @@ func (this *Parser) run() {
 			default:
 				panic("unexpected type for graph")
 			}
+			this.inGraph = true
 
 			val, ok = <-this.source
 			if !ok {
@@ -113,6 +114,14 @@ func (this *Parser) run() {
 				panic("expected {")
 			}
 
+		} else if val.tokenType == GraphOpening {
+			if (this.curSubject != nil) || (this.curPredicate != nil) || (this.curObject != nil) {
+				panic("unexpected {")
+			}
+			if this.inGraph {
+				panic("already in a wrapped graph")
+			}
+			this.inGraph = true
 		} else if val.tokenType == SemiColumn {
 			this.target <- &model.Statement{
 				Subject:   this.curSubject,
@@ -315,6 +324,14 @@ func (this *Parser) run() {
 			} else {
 				panic("reified triple cannot be a predicate")
 			}
+		} else if val.tokenType == ReifierTag {
+			if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject != nil) {
+				this.curTripleTerm = &model.TripleTerm{Subject: this.curSubject, Predicate: this.curPredicate, Object: this.curObject}
+				this.assertedAndAnnotated()
+			} else {
+				panic("enexpected ")
+			}
+
 		} else if val.tokenType == GraphClosing {
 			if !this.inGraph {
 				panic("unexpected }")
@@ -336,6 +353,342 @@ func (this *Parser) run() {
 			this.inGraph = false
 		}
 
+	}
+}
+
+func (this *Parser) assertedAndAnnotated() {
+
+	// a lot of copies here
+	val, ok := <-this.source
+	if !ok {
+		// not necessarily wrong
+		return
+	}
+	switch val.tokenType {
+	case BlankNodeAnonymous:
+		this.curReifier = model.NewAnonymousBlankNode()
+	case BlankNodeLabel:
+		this.curReifier = model.NewBlankNodeFromLabel(val.value)
+	case ReifierTag:
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+		}
+		oldReifer := this.curReifier
+		this.curReifier = nil
+		this.assertedAndAnnotated()
+		this.curReifier = oldReifer
+	case Dot:
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curSubject = nil
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	case Coma:
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	case SemiColumn:
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	case AnnotationOpening:
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.runInsideAnnotation()
+	default:
+		panic("unexpected token type")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		// not necessarily wrong
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curSubject = nil
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	}
+
+	switch val.tokenType {
+	case AnnotationOpening:
+		this.runInsideAnnotation()
+	case Coma:
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	case SemiColumn:
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	case Dot:
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curSubject = nil
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	default:
+		panic("unexpected token type")
+	}
+
+	val, ok = <-this.source
+	if !ok {
+		// not necessarily wrong
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curSubject = nil
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	}
+
+	switch val.tokenType {
+	case ReifierTag:
+		this.curReifier = model.NewAnonymousBlankNode()
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+		}
+		oldReifer := this.curReifier
+		this.curReifier = nil
+		this.assertedAndAnnotated()
+		this.curReifier = oldReifer
+		// TODO I do not know how to end here
+		this.curReifier = nil
+		return
+	case Coma:
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	case SemiColumn:
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	case Dot:
+		this.target <- &model.Statement{
+			Subject:   this.curReifier,
+			Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+			Object:    this.curTripleTerm,
+			Context:   this.curGraph,
+		}
+		this.target <- &model.Statement{
+			Subject:   this.curSubject,
+			Object:    this.curObject,
+			Predicate: this.curPredicate,
+			Context:   this.curGraph,
+		}
+		this.curSubject = nil
+		this.curPredicate = nil
+		this.curObject = nil
+		this.curReifier = nil
+		return
+	default:
+		panic("unexpected token type")
+	}
+
+}
+
+func (this *Parser) runInsideAnnotation() {
+	oldSubject := this.curSubject
+	oldPredicate := this.curPredicate
+	oldObject := this.curObject
+
+	defer func() {
+		this.curSubject = oldSubject
+		this.curPredicate = oldPredicate
+		this.curObject = oldObject
+	}()
+
+	this.curSubject = this.curReifier
+	this.curPredicate = nil
+	this.curObject = nil
+
+	for {
+		val, ok := <-this.source
+		if !ok {
+			panic("unexpected EOF")
+		}
+
+		switch val.tokenType {
+		case BlankNodeOpening:
+			if this.curPredicate != nil {
+				this.curObject = model.NewAnonymousBlankNode()
+				this.runInsideBlankNode(this.curObject.(*model.AnonymousBlankNode))
+
+			} else {
+				panic("blank node cannot be a predicate")
+			}
+		case CollectionOpening:
+			if (this.curSubject == nil) && (this.curPredicate == nil) {
+				this.curSubject = model.NewAnonymousBlankNode()
+				this.runInsideCollection(this.curSubject.(*model.AnonymousBlankNode))
+				continue
+			} else if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject == nil) {
+				this.curObject = model.NewAnonymousBlankNode()
+				this.runInsideCollection(this.curObject.(*model.AnonymousBlankNode))
+				continue
+			} else {
+				panic("unexpected collection for the predicate")
+			}
+		case ReifierTag:
+			if (this.curObject != nil) && (this.curPredicate != nil) {
+				oldReifier := this.curReifier
+				this.curReifier = nil
+				this.assertedAndAnnotated()
+				this.curReifier = oldReifier
+			} else {
+				panic("unexpected ~")
+			}
+		case TripleTermOpening:
+			if (this.curPredicate != nil) && (this.curObject == nil) {
+				this.curTripleTerm = &model.TripleTerm{}
+				this.runInsideTripleTerm(this.curTripleTerm)
+				this.curObject = this.curTripleTerm
+				this.curTripleTerm = nil
+			} else {
+				panic("the triple term cannot be a  predicate")
+			}
+		case ReifiedTripleOpening:
+			this.curTripleTerm = &model.TripleTerm{}
+			var reifier model.RDFTerm
+			this.runInsideReifiedTerm(this.curTripleTerm, &reifier)
+
+			if this.curSubject == nil {
+				this.curSubject = reifier
+			} else if (this.curSubject != nil) && (this.curObject == nil) {
+				this.curObject = reifier
+			} else {
+				panic("reified triple cannot be a predicate")
+			}
+
+		}
 	}
 }
 

@@ -442,14 +442,14 @@ func TestGraphTriples(t *testing.T) {
 		{tokenType: Dot},
 		{tokenType: GraphClosing},
 		{tokenType: Graph},
-		{value: "_:aa", tokenType: BlankNodeLabel},
+		{value: "aa", tokenType: BlankNodeLabel},
 		{tokenType: GraphOpening},
 		{value: "pp:a", tokenType: PNameLN},
 		{value: "pp:b", tokenType: PNameLN},
 		{value: "pp:c", tokenType: PNameLN},
 		{tokenType: GraphClosing},
 		{tokenType: Graph},
-		{value: "_:aa", tokenType: BlankNodeLabel},
+		{value: "aa", tokenType: BlankNodeLabel},
 		{tokenType: GraphOpening},
 		{value: "pp:a", tokenType: PNameLN},
 		{value: "pp:b", tokenType: PNameLN},
@@ -464,8 +464,8 @@ func TestGraphTriples(t *testing.T) {
 		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
 		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
 		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
-		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("_:aa")},
-		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("_:aa")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("aa")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("aa")},
 	}
 
 	source := make(chan *Token)
@@ -493,5 +493,11 @@ func TestGraphTriples(t *testing.T) {
 	// first check the lengths
 	if len(statements) != len(expected) {
 		t.Errorf("The number of statements is not correct; should be %d, got %d", len(expected), len(statements))
+	}
+
+	for i, statement := range statements {
+		if !statement.Equals(expected[i]) {
+			t.Errorf("%d th statement is not equal to the expected", i)
+		}
 	}
 }
