@@ -326,7 +326,6 @@ func (this *Parser) run() {
 			}
 		} else if val.tokenType == ReifierTag {
 			if (this.curSubject != nil) && (this.curPredicate != nil) && (this.curObject != nil) {
-				this.curTripleTerm = &model.TripleTerm{Subject: this.curSubject, Predicate: this.curPredicate, Object: this.curObject}
 				this.assertedAndAnnotated()
 			} else {
 				panic("enexpected ")
@@ -357,10 +356,29 @@ func (this *Parser) run() {
 }
 
 func (this *Parser) assertedAndAnnotated() {
+	this.curTripleTerm = &model.TripleTerm{Subject: this.curSubject, Predicate: this.curPredicate, Object: this.curObject}
 	for {
 		val, ok := <-this.source
 		if !ok {
-			// not necessarily wrong
+			if this.curReifier == nil {
+				this.curReifier = model.NewAnonymousBlankNode()
+			}
+			this.target <- &model.Statement{
+				Subject:   this.curReifier,
+				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+				Object: &model.TripleTerm{
+					Subject:   this.curSubject,
+					Predicate: this.curPredicate,
+					Object:    this.curObject,
+				},
+				Context: this.curGraph,
+			}
+			this.target <- &model.Statement{
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
+				Context:   this.curGraph,
+			}
 			return
 		}
 		switch val.tokenType {
@@ -425,6 +443,7 @@ func (this *Parser) assertedAndAnnotated() {
 			}
 			this.curReifier = nil
 			this.curObject = nil
+			return
 		case SemiColumn:
 			if this.curReifier == nil {
 				this.curReifier = model.NewAnonymousBlankNode()
@@ -439,9 +458,16 @@ func (this *Parser) assertedAndAnnotated() {
 				},
 				Context: this.curGraph,
 			}
+			this.target <- &model.Statement{
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
+				Context:   this.curGraph,
+			}
 			this.curReifier = nil
 			this.curObject = nil
 			this.curPredicate = nil
+			return
 		case Dot:
 			if this.curReifier == nil {
 				this.curReifier = model.NewAnonymousBlankNode()
@@ -456,12 +482,21 @@ func (this *Parser) assertedAndAnnotated() {
 				},
 				Context: this.curGraph,
 			}
+			this.target <- &model.Statement{
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
+				Context:   this.curGraph,
+			}
 			this.curReifier = nil
 			this.curObject = nil
 			this.curPredicate = nil
 			this.curSubject = nil
+			return
 		case AnnotationOpening:
+			//
 			this.runInsideAnnotation()
+			return
 		}
 	}
 }
@@ -475,11 +510,15 @@ func (this *Parser) runInsideAnnotation() {
 		this.curSubject = oldSubject
 		this.curPredicate = oldPredicate
 		this.curObject = oldObject
+		this.curTripleTerm = nil
+		this.curReifier = nil
 	}()
 
 	this.curSubject = this.curReifier
 	this.curPredicate = nil
 	this.curObject = nil
+	this.curTripleTerm = nil
+	this.curReifier = nil
 
 	for {
 		val, ok := <-this.source
@@ -510,19 +549,19 @@ func (this *Parser) runInsideAnnotation() {
 			}
 		case ReifierTag:
 			if (this.curObject != nil) && (this.curPredicate != nil) {
-				oldReifier := this.curReifier
-				this.curReifier = nil
+
 				this.assertedAndAnnotated()
-				this.curReifier = oldReifier
+
 			} else {
 				panic("unexpected ~")
 			}
 		case TripleTermOpening:
 			if (this.curPredicate != nil) && (this.curObject == nil) {
+
 				this.curTripleTerm = &model.TripleTerm{}
 				this.runInsideTripleTerm(this.curTripleTerm)
 				this.curObject = this.curTripleTerm
-				this.curTripleTerm = nil
+
 			} else {
 				panic("the triple term cannot be a  predicate")
 			}
@@ -531,13 +570,45 @@ func (this *Parser) runInsideAnnotation() {
 			var reifier model.RDFTerm
 			this.runInsideReifiedTerm(this.curTripleTerm, &reifier)
 
-			if this.curSubject == nil {
-				this.curSubject = reifier
-			} else if (this.curSubject != nil) && (this.curObject == nil) {
+			if (this.curSubject != nil) && (this.curObject == nil) {
 				this.curObject = reifier
 			} else {
 				panic("reified triple cannot be a predicate")
 			}
+		case Coma:
+			if (this.curObject == nil) || (this.curPredicate == nil) {
+				panic("unexpected ,")
+			}
+			this.target <- &model.Statement{
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
+				Context:   this.curGraph,
+			}
+			this.curObject = nil
+		case SemiColumn:
+			if (this.curObject == nil) || (this.curPredicate == nil) {
+				panic("unexpected ;")
+			}
+			this.target <- &model.Statement{
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
+				Context:   this.curGraph,
+			}
+			this.curObject = nil
+			this.curPredicate = nil
+		case AnnotationClosing:
+			if (this.curObject == nil) || (this.curPredicate == nil) {
+				panic("unexpected |}")
+			}
+			this.target <- &model.Statement{
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
+				Context:   this.curGraph,
+			}
+			return
 
 		}
 	}
@@ -662,7 +733,7 @@ func (this *Parser) runInsideReifiedTerm(term *model.TripleTerm, param2 *model.R
 		}
 		return
 	case ReifierTag:
-		// will see what happens
+		// see what happens next
 	}
 
 	val, ok = <-this.source
