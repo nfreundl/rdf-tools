@@ -501,3 +501,110 @@ func TestGraphTriples(t *testing.T) {
 		}
 	}
 }
+
+func TestAssertedAndAnnotated(t *testing.T) {
+	/*
+		`@prefix pp: <http://example.com/> .
+		pp:a pp:b pp:c ~ .
+		pp:d pp:e pp:f ~ ~ .
+		pp:g pp:h pp:i ~ {| pp:j pp:k , pp:l |} ~ pp:m .
+		pp:n pp:o pp:p ~ pp:r {| pp:s pp:t |} .
+		pp:u pp:v pp:w ~
+
+		`
+	*/
+
+	x := []*Token{
+		{tokenType: PrefixTag},
+		{value: "pp:", tokenType: PNameNS},
+		{value: "<http://example.com/>", tokenType: IRI},
+		{tokenType: Dot},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: ReifierTag},
+		{tokenType: Dot},
+		{value: "pp:d", tokenType: PNameLN},
+		{value: "pp:e", tokenType: PNameLN},
+		{value: "pp:f", tokenType: PNameLN},
+		{tokenType: ReifierTag},
+		{tokenType: ReifierTag},
+		{tokenType: Dot},
+		{value: "pp:g", tokenType: PNameLN},
+		{value: "pp:h", tokenType: PNameLN},
+		{value: "pp:i", tokenType: PNameLN},
+		{tokenType: ReifierTag},
+		{tokenType: AnnotationOpening},
+		{value: "pp:j", tokenType: PNameLN},
+		{value: "pp:k", tokenType: PNameLN},
+		{tokenType: Coma},
+		{value: "pp:l", tokenType: PNameLN},
+		{tokenType: AnnotationClosing},
+		{tokenType: Dot},
+		{tokenType: GraphClosing},
+		{tokenType: GraphOpening},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: Dot},
+		{tokenType: GraphClosing},
+		{tokenType: Graph},
+		{value: "aa", tokenType: BlankNodeLabel},
+		{tokenType: GraphOpening},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: GraphClosing},
+		{tokenType: Graph},
+		{value: "aa", tokenType: BlankNodeLabel},
+		{tokenType: GraphOpening},
+		{value: "pp:a", tokenType: PNameLN},
+		{value: "pp:b", tokenType: PNameLN},
+		{value: "pp:c", tokenType: PNameLN},
+		{tokenType: Dot},
+		{tokenType: GraphClosing},
+	}
+
+	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
+
+	expected := []*model.Statement{
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("aa")},
+		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("aa")},
+	}
+
+	source := make(chan *Token)
+
+	go func() {
+		for _, tk := range x {
+			source <- tk
+
+		}
+		close(source)
+	}()
+
+	target := make(chan *model.Statement)
+
+	parser := NewParser(source, target)
+
+	parser.Start()
+	statements := []*model.Statement{}
+
+	for statement := range target {
+		fmt.Printf("got statement !\n")
+		statements = append(statements, statement)
+	}
+
+	// first check the lengths
+	if len(statements) != len(expected) {
+		t.Errorf("The number of statements is not correct; should be %d, got %d", len(expected), len(statements))
+	}
+
+	for i, statement := range statements {
+		if !statement.Equals(expected[i]) {
+			t.Errorf("%d th statement is not equal to the expected", i)
+		}
+	}
+}

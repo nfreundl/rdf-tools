@@ -497,6 +497,8 @@ func (this *Parser) assertedAndAnnotated() {
 			//
 			this.runInsideAnnotation()
 			return
+		default:
+			panic("unexpected token type")
 		}
 	}
 }
@@ -851,9 +853,19 @@ func (this *Parser) runInsideTripleTerm(term *model.TripleTerm) {
 }
 
 func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
+	oldSubject := this.curSubject
+	oldPredicate := this.curPredicate
+	oldObject := this.curObject
 
-	var curPredicate model.RDFTerm
-	var curObject model.RDFTerm
+	defer func() {
+		this.curSubject = oldSubject
+		this.curPredicate = oldPredicate
+		this.curObject = oldObject
+	}()
+
+	this.curSubject = newBlankNode
+	this.curPredicate = nil
+	this.curObject = nil
 	for {
 		val, ok := <-this.source
 		if !ok {
@@ -874,47 +886,44 @@ func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
 				node = this.newPrefixedName(prefix, pnLocal)
 			}
 
-			if curPredicate == nil {
-				curPredicate = node
-
-			} else if curObject == nil {
-
-				curObject = node
-
+			if this.curPredicate == nil {
+				this.curPredicate = node
+			} else if this.curObject == nil {
+				this.curObject = node
 			} else {
 				panic("expecting , ; or ]")
 			}
 
 		} else if val.tokenType == Coma {
-			if (curObject == nil) || (curPredicate == nil) {
+			if (this.curObject == nil) || (this.curPredicate == nil) {
 				panic("unexpected ,")
 			}
 			this.target <- &model.Statement{
-				Subject:   newBlankNode,
-				Predicate: curPredicate,
-				Object:    curObject,
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
 				Context:   this.curGraph,
 			}
-			curObject = nil
+			this.curObject = nil
 
 		} else if val.tokenType == SemiColumn {
-			if (curObject == nil) || (curPredicate == nil) {
+			if (this.curObject == nil) || (this.curPredicate == nil) {
 				panic("unexpected ;")
 			}
 			this.target <- &model.Statement{
-				Subject:   newBlankNode,
-				Predicate: curPredicate,
-				Object:    curObject,
+				Subject:   this.curSubject,
+				Predicate: this.curPredicate,
+				Object:    this.curObject,
 				Context:   this.curGraph,
 			}
-			curPredicate = nil
-			curObject = nil
+			this.curPredicate = nil
+			this.curObject = nil
 		} else if val.tokenType == BlankNodeClosing {
-			if (curPredicate != nil) && (curObject != nil) {
+			if (this.curPredicate != nil) && (this.curObject != nil) {
 				this.target <- &model.Statement{
-					Subject:   newBlankNode,
-					Object:    curObject,
-					Predicate: curPredicate,
+					Subject:   this.curSubject,
+					Object:    this.curObject,
+					Predicate: this.curPredicate,
 					Context:   this.curGraph,
 				}
 				return
@@ -924,22 +933,22 @@ func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
 
 		} else if val.tokenType == BlankNodeAnonymous {
 			newBlankNode2 := model.NewAnonymousBlankNode()
-			if curPredicate != nil {
-				curObject = newBlankNode2
+			if this.curPredicate != nil {
+				this.curObject = newBlankNode2
 				this.target <- &model.Statement{
-					Subject:   newBlankNode,
-					Object:    curObject,
-					Predicate: curPredicate,
+					Subject:   this.curSubject,
+					Object:    this.curObject,
+					Predicate: this.curPredicate,
 					Context:   this.curGraph,
 				}
-				curPredicate, curObject = nil, nil
+				this.curPredicate, this.curObject = nil, nil
 			} else {
 				panic("unexcpected blank node predicate")
 			}
 		} else if val.tokenType == BlankNodeOpening {
 			newBlankNode2 := model.NewAnonymousBlankNode()
-			if curPredicate != nil {
-				curObject = newBlankNode2
+			if this.curPredicate != nil {
+				this.curObject = newBlankNode2
 			} else {
 				panic("blank node as predicate not implemented")
 			}
@@ -950,11 +959,11 @@ func (this *Parser) runInsideBlankNode(newBlankNode *model.AnonymousBlankNode) {
 		} else if val.tokenType == CollectionOpening {
 
 			newBlankNodeCollection := model.NewAnonymousBlankNode()
-			if curPredicate == nil {
+			if this.curPredicate == nil {
 				panic("anonymous blanknode (from collection) cannot be a predicate")
-			} else if curObject == nil {
-				curObject = newBlankNodeCollection
-				this.runInsideCollection(curObject.(*model.AnonymousBlankNode))
+			} else if this.curObject == nil {
+				this.curObject = newBlankNodeCollection
+				this.runInsideCollection(this.curObject.(*model.AnonymousBlankNode))
 				continue
 			}
 		} else {
@@ -1062,6 +1071,13 @@ func (this *Parser) runInsideCollection(newBlankNode *model.AnonymousBlankNode) 
 			firstElm = false
 			this.runInsideCollection(newBlankNode.(*model.AnonymousBlankNode))
 			continue
+
+		} else if val.tokenType == ReifierTag {
+			if (this.curPredicate != nil) && (this.curObject != nil) {
+				this.assertedAndAnnotated()
+			} else {
+				panic("enexpected ")
+			}
 
 		} else {
 			panic("not implemented")
