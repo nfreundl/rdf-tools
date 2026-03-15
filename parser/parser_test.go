@@ -504,12 +504,12 @@ func TestGraphTriples(t *testing.T) {
 
 func TestAssertedAndAnnotated(t *testing.T) {
 	/*
-		`@prefix pp: <http://example.com/> .
-		pp:a pp:b pp:c ~ .
-		pp:d pp:e pp:f ~ ~ .
-		pp:g pp:h pp:i ~ {| pp:j pp:k , pp:l |} ~ pp:m .
-		pp:n pp:o pp:p ~ pp:r {| pp:s pp:t |} .
-		pp:u pp:v pp:w ~
+		`@prefix pp: <http://example.com/> . ok
+		pp:a pp:b pp:c ~ . ok
+		pp:d pp:e pp:f ~ ~ . ok
+		pp:g pp:h pp:i ~ {| pp:j pp:k , pp:l |} ~ pp:m . ok
+		pp:n pp:o pp:p ~ pp:q {| pp:r pp:s |} .
+		pp:t pp:u pp:v ~
 
 		`
 	*/
@@ -540,39 +540,64 @@ func TestAssertedAndAnnotated(t *testing.T) {
 		{tokenType: Coma},
 		{value: "pp:l", tokenType: PNameLN},
 		{tokenType: AnnotationClosing},
+		{tokenType: ReifierTag},
+		{value: "pp:m", tokenType: PNameLN},
 		{tokenType: Dot},
-		{tokenType: GraphClosing},
-		{tokenType: GraphOpening},
-		{value: "pp:a", tokenType: PNameLN},
-		{value: "pp:b", tokenType: PNameLN},
-		{value: "pp:c", tokenType: PNameLN},
+		{value: "pp:n", tokenType: PNameLN},
+		{value: "pp:o", tokenType: PNameLN},
+		{value: "pp:p", tokenType: PNameLN},
+		{tokenType: ReifierTag},
+		{value: "pp:q", tokenType: PNameLN},
+		{tokenType: AnnotationOpening},
+		{value: "pp:r", tokenType: PNameLN},
+		{value: "pp:s", tokenType: PNameLN},
+		{tokenType: AnnotationClosing},
 		{tokenType: Dot},
-		{tokenType: GraphClosing},
-		{tokenType: Graph},
-		{value: "aa", tokenType: BlankNodeLabel},
-		{tokenType: GraphOpening},
-		{value: "pp:a", tokenType: PNameLN},
-		{value: "pp:b", tokenType: PNameLN},
-		{value: "pp:c", tokenType: PNameLN},
-		{tokenType: GraphClosing},
-		{tokenType: Graph},
-		{value: "aa", tokenType: BlankNodeLabel},
-		{tokenType: GraphOpening},
-		{value: "pp:a", tokenType: PNameLN},
-		{value: "pp:b", tokenType: PNameLN},
-		{value: "pp:c", tokenType: PNameLN},
-		{tokenType: Dot},
-		{tokenType: GraphClosing},
+		{value: "pp:t", tokenType: PNameLN},
+		{value: "pp:u", tokenType: PNameLN},
+		{value: "pp:v", tokenType: PNameLN},
+		{tokenType: ReifierTag},
 	}
 
 	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
 
 	expected := []*model.Statement{
+		{Subject: model.NewAnonymousBlankNode(), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "a"),
+			Predicate: newPname("pp:", "b"),
+			Object:    newPname("pp:", "c")}},
 		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
-		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
-		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c")},
-		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("aa")},
-		{Subject: newPname("pp:", "a"), Predicate: newPname("pp:", "b"), Object: newPname("pp:", "c"), Context: model.NewBlankNodeFromLabel("aa")},
+		{Subject: model.NewAnonymousBlankNode(), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "d"),
+			Predicate: newPname("pp:", "e"),
+			Object:    newPname("pp:", "f")}},
+		{Subject: model.NewAnonymousBlankNode(), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "d"),
+			Predicate: newPname("pp:", "e"),
+			Object:    newPname("pp:", "f")}},
+		{Subject: newPname("pp:", "d"), Predicate: newPname("pp:", "e"), Object: newPname("pp:", "f")},
+		{Subject: model.NewAnonymousBlankNode(), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "g"),
+			Predicate: newPname("pp:", "h"),
+			Object:    newPname("pp:", "i")}},
+		{Subject: model.NewAnonymousBlankNode(), Predicate: newPname("pp:", "j"), Object: newPname("pp:", "k")},
+		{Subject: model.NewAnonymousBlankNode(), Predicate: newPname("pp:", "j"), Object: newPname("pp:", "l")},
+		{Subject: newPname("pp:", "m"), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "g"),
+			Predicate: newPname("pp:", "h"),
+			Object:    newPname("pp:", "i")}},
+		{Subject: newPname("pp:", "g"), Predicate: newPname("pp:", "h"), Object: newPname("pp:", "i")},
+		{Subject: newPname("pp:", "q"), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "n"),
+			Predicate: newPname("pp:", "o"),
+			Object:    newPname("pp:", "p")}},
+		{Subject: newPname("pp:", "q"), Predicate: newPname("pp:", "r"), Object: newPname("pp:", "s")},
+		{Subject: newPname("pp:", "n"), Predicate: newPname("pp:", "o"), Object: newPname("pp:", "p")},
+		{Subject: model.NewAnonymousBlankNode(), Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"), Object: &model.TripleTerm{
+			Subject:   newPname("pp:", "t"),
+			Predicate: newPname("pp:", "u"),
+			Object:    newPname("pp:", "v")}},
+		{Subject: newPname("pp:", "t"), Predicate: newPname("pp:", "u"), Object: newPname("pp:", "v")},
 	}
 
 	source := make(chan *Token)
@@ -602,9 +627,70 @@ func TestAssertedAndAnnotated(t *testing.T) {
 		t.Errorf("The number of statements is not correct; should be %d, got %d", len(expected), len(statements))
 	}
 
-	for i, statement := range statements {
-		if !statement.Equals(expected[i]) {
-			t.Errorf("%d th statement is not equal to the expected", i)
-		}
+	// check statements without blank node
+	if !statements[1].Equals(expected[1]) {
+		t.Errorf("statement and expected statement are not equal %d", 1)
 	}
+	if !statements[4].Equals(expected[4]) {
+		t.Errorf("statement and expected statement are not equal %d", 4)
+	}
+	if !statements[8].Equals(expected[8]) {
+		t.Errorf("statement and expected statement are not equal %d", 8)
+	}
+	if !statements[9].Equals(expected[9]) {
+		t.Errorf("statement and expected statement are not equal %d", 9)
+	}
+	if !statements[10].Equals(expected[10]) {
+		t.Errorf("statement and expected statement are not equal %d", 10)
+	}
+	if !statements[11].Equals(expected[11]) {
+		t.Errorf("statement and expected statement are not equal %d", 11)
+	}
+	if !statements[12].Equals(expected[12]) {
+		t.Errorf("statement and expected statement are not equal %d", 12)
+	}
+	if !statements[14].Equals(expected[14]) {
+		t.Errorf("statement and expected statement are not equal %d", 14)
+	}
+
+	// check blank nodes that should be equal to each other
+	if !statements[5].Subject.Equals(statements[6].Subject) {
+		t.Errorf("the blank nodes %d and %d are not equal", 5, 6)
+	}
+	if !statements[5].Subject.Equals(statements[7].Subject) {
+		t.Errorf("the blank nodes %d and %d are not equal", 5, 7)
+	}
+
+	// check blank nodes that should not be equal to each other
+	if statements[0].Subject.Equals(statements[2].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 0, 2)
+	}
+	if statements[0].Subject.Equals(statements[3].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 0, 3)
+	}
+	if statements[0].Subject.Equals(statements[5].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 0, 5)
+	}
+	if statements[0].Subject.Equals(statements[12].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 0, 12)
+	}
+	if statements[2].Subject.Equals(statements[3].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 2, 3)
+	}
+	if statements[2].Subject.Equals(statements[5].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 2, 5)
+	}
+	if statements[2].Subject.Equals(statements[12].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 2, 12)
+	}
+	if statements[3].Subject.Equals(statements[5].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 3, 5)
+	}
+	if statements[3].Subject.Equals(statements[12].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 3, 12)
+	}
+	if statements[5].Subject.Equals(statements[12].Subject) {
+		t.Errorf("blank nodes %d and %d are equal", 5, 12)
+	}
+
 }

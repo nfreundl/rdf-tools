@@ -494,8 +494,21 @@ func (this *Parser) assertedAndAnnotated() {
 			this.curSubject = nil
 			return
 		case AnnotationOpening:
-			//
+			if this.curReifier == nil {
+				this.curReifier = model.NewAnonymousBlankNode()
+			}
+			this.target <- &model.Statement{
+				Subject:   this.curReifier,
+				Predicate: model.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"),
+				Object: &model.TripleTerm{
+					Subject:   this.curSubject,
+					Predicate: this.curPredicate,
+					Object:    this.curObject,
+				},
+				Context: this.curGraph,
+			}
 			this.runInsideAnnotation()
+			this.curReifier = nil
 			return
 		default:
 			panic("unexpected token type")
@@ -611,7 +624,32 @@ func (this *Parser) runInsideAnnotation() {
 				Context:   this.curGraph,
 			}
 			return
+		case PNameLN:
+			splt := strings.SplitN(val.value, ":", 2)
+			prefix := splt[0] + ":"
+			pnLocal := splt[1]
+			newPN := this.newPrefixedName(prefix, pnLocal)
+			if this.curPredicate == nil {
+				this.curPredicate = newPN
+			} else if this.curObject == nil {
+				this.curObject = newPN
+			} else {
+				panic("unexpected PNameLN")
+			}
+		case PNameNS:
+			splt := strings.SplitN(val.value, ":", 2)
+			prefix := splt[0] + ":"
+			newPN := this.newPrefixedName(prefix, "")
+			if this.curPredicate == nil {
+				this.curPredicate = newPN
+			} else if this.curObject == nil {
+				this.curObject = newPN
+			} else {
+				panic("unexpected PNameLN")
+			}
 
+		default:
+			panic("unexpectd token type")
 		}
 	}
 }
