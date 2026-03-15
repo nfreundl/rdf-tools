@@ -112,7 +112,8 @@ func (this *isocanizer) ingest(st *model.Statement) {
 func (this *isocanizer) runOneRoundDeterministicHashing(blankNodeHashes, otherHashes map[string][][2]uint64, blankNodeIndex, otherHashesIdx int) (map[string][][2]uint64, map[string][][2]uint64) {
 
 	for bnodeID, statements := range this.bnodeToStatements {
-		acc := [2]uint64{0, 0}
+		// source of mistake acc := [2]uint64{0, 0}
+		acc := blankNodeHashes[bnodeID][blankNodeIndex]
 		for _, statement := range statements.AsSubject {
 			predicate := this.getCurrentHash(blankNodeHashes, otherHashes, blankNodeIndex, otherHashesIdx, statement.Predicate)
 			object := this.getCurrentHash(blankNodeHashes, otherHashes, blankNodeIndex, otherHashesIdx, statement.Object)
@@ -160,6 +161,7 @@ func (this *isocanizer) testCondition(blankNodeHashes, otherHashes map[string][]
 		}
 	}
 
+	// for all x,y; hash[i][x] == hash[i][y] <> x == y
 	secondCondition := true
 	for bnode1, hashes1 := range blankNodeHashes {
 		for bnode2, hashes2 := range blankNodeHashes {
@@ -193,6 +195,10 @@ func (this *isocanizer) testCondition(blankNodeHashes, otherHashes map[string][]
 }
 
 func (this *isocanizer) getCurrentHash(blankNodeHashes, otherHashes map[string][][2]uint64, blankNodeIndex, otherHashesIdx int, term model.RDFTerm) [2]uint64 {
+	if term == nil {
+		// TODO check that it does not collide with the the bnodes
+		return otherHashes[""][otherHashesIdx]
+	}
 	if bnode, ok := term.(model.BlankNode); ok {
 		return blankNodeHashes[bnode.String()][blankNodeIndex]
 	}
@@ -204,9 +210,9 @@ func (this *isocanizer) runDeterministicHashing(blankNodeHashes, otherHashes map
 	blankNodeIdx := 0
 	otherNodeIdx := 0
 
-	for cond := true; cond; cond = this.testCondition(blankNodeHashes, otherHashes, blankNodeIdx, otherNodeIdx) {
-		blankNodeIdx++
+	for cond := true; cond; cond = !this.testCondition(blankNodeHashes, otherHashes, blankNodeIdx, otherNodeIdx) {
 		this.runOneRoundDeterministicHashing(blankNodeHashes, otherHashes, blankNodeIdx, otherNodeIdx)
+		blankNodeIdx++
 	}
 
 	blankNodeDeterministHashes = make(map[string][2]uint64)
@@ -308,9 +314,11 @@ func isLower(a, b map[string][2]uint64) bool {
 func (this *isocanizer) distinguish(otherHashes map[string][][2]uint64, blankNodeDeterministHashes map[string][2]uint64, smallestNonTrivial []string, candidateHashes map[string][2]uint64) map[string][2]uint64 {
 	for _, bnode := range smallestNonTrivial {
 		hash1 := make(map[string][2]uint64)
+		// copy
 		for b, h := range blankNodeDeterministHashes {
 			hash1[b] = [2]uint64{h[0], h[1]}
 		}
+
 		hash1[bnode] = hashWithDistinguisher(hash1[bnode])
 		hash2 := this.runDeterministicHashing(this.prepareFromPreviousResult(hash1), otherHashes)
 		if isFine, smallestNonTrivial1 := this.getSmallestNonTrivialSetIfPartitionIfNotFine(hash2); isFine {

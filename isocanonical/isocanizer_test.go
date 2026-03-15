@@ -18,14 +18,13 @@ func TestWithOneAmbiguity(t *testing.T) {
 
 	newPname := model.PrefixNameFactory(map[model.Prefix]model.IRI{"pp:": "http://example.com/pp"})
 	graph := []*model.Statement{
-		{Subject: model.NewAnonymousBlankNode(), Predicate: model.A, Object: newPname("pp:", "xx")},
-		{Subject: model.NewAnonymousBlankNode(), Predicate: model.A, Object: newPname("pp:", "yy")},
-		{Subject: model.NewAnonymousBlankNode(), Predicate: model.A, Object: model.NewAnonymousBlankNode()},
-		{Subject: model.NewAnonymousBlankNode(), Predicate: model.A, Object: newPname("pp:", "zz")},
-		{Subject: model.NewAnonymousBlankNode(), Predicate: model.A, Object: newPname("pp:", "zz")},
-		{Subject: newPname("pp:", "aa"), Predicate: newPname("pp:", "has"), Object: model.NewAnonymousBlankNode()},
-		{Subject: model.NewAnonymousBlankNode(), Predicate: model.A, Object: model.NewAnonymousBlankNode()},
-		{Subject: model.NewAnonymousBlankNode(), Predicate: model.A, Object: model.NewAnonymousBlankNode()},
+		{Subject: model.NewBlankNodeFromLabel("1"), Predicate: model.A, Object: newPname("pp:", "xx")},
+		{Subject: model.NewBlankNodeFromLabel("1"), Predicate: model.A, Object: newPname("pp:", "yy")},
+		{Subject: model.NewBlankNodeFromLabel("1"), Predicate: model.A, Object: model.NewBlankNodeFromLabel("2")},
+		{Subject: model.NewBlankNodeFromLabel("2"), Predicate: model.A, Object: newPname("pp:", "zz")},
+		{Subject: newPname("pp:", "aa"), Predicate: newPname("pp:", "has"), Object: model.NewBlankNodeFromLabel("3")},
+		{Subject: model.NewBlankNodeFromLabel("4"), Predicate: model.A, Object: model.NewBlankNodeFromLabel("5")},
+		{Subject: model.NewBlankNodeFromLabel("6"), Predicate: model.A, Object: model.NewBlankNodeFromLabel("7")},
 	}
 
 	channel := make(chan *model.Statement)
